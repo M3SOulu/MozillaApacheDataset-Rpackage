@@ -61,6 +61,7 @@ ParseBugId <- function(log.message) {
 #' @param bugzilla.in Bugzilla RDS input.
 #' @param idmerging.in Identity merging RDS input.
 #' @param git.out RDS output file.
+#' @export
 GitLog <- function(git.in, bugzilla.in, idmerging.in, git.out) {
   log <- readRDS(git.in)
   mozbugs <- readRDS(bugzilla.in)
@@ -110,6 +111,7 @@ GitLog <- function(git.in, bugzilla.in, idmerging.in, git.out) {
 #'
 #' @param idmerging Identity merging.
 #' @param comments.in Bugzilla comments RDS input.
+#' @return Bugzilla log.
 BugzillaLog <- function(idmerging, comments.in) {
   bugzilla <- readRDS(comments.in)
   bugzilla <- merge(idmerging[, list(source, merged.id, author.key, author)],
@@ -127,6 +129,7 @@ BugzillaLog <- function(idmerging, comments.in) {
 #'
 #' @param idmerging Identity merging.
 #' @param comments.in Jira comments RDS input.
+#' @return Jira log.
 JiraLog <- function(idmerging, comments.in) {
   jira <- readRDS(comments.in)
   jira <- merge(jira, idmerging[, list(source, merged.id, author.key, author)],
@@ -153,6 +156,7 @@ JiraLog <- function(idmerging, comments.in) {
 #' @param jira.comments.in Input RDS file of Jira comments.
 #' @param jira.bugs.in Input RDS file of Jira bugs.
 #' @param buglog.out Bugzilla bugs output RDS file.
+#' @export
 BugLog <- function(idmerging.in, bugzilla.comments.in, bugzilla.bugs.in,
                    jira.comments.in, jira.bugs.in, buglog.out) {
   idmerging <- read.csv(idmerging.in, stringsAsFactors=FALSE)
@@ -190,6 +194,7 @@ TimeZoneHistory <- function(tz, times) {
 #'
 #' @param git.in Input gitlog file.
 #' @param tz.out Output RDS file.
+#' @export
 GitTimeZoneHistory <- function(git.in, tz.out) {
   gitlog <- readRDS(git.in)
   gitlog$message <- NULL
@@ -211,6 +216,7 @@ GitTimeZoneHistory <- function(git.in, tz.out) {
 #' @param buglog.in Buglog RDS input file.
 #' @param tz.in Time zone history RDS input file.
 #' @param buglog.out Output file.
+#' @export
 FilteredBugLog <- function(buglog.in, tz.in, buglog.out) {
   buglog <- readRDS(buglog.in)
   buglog[, bug.id := as.character(bug.id)]
@@ -238,6 +244,7 @@ FilteredBugLog <- function(buglog.in, tz.in, buglog.out) {
 #' @param bugs.in Bug log RDS input file.
 #' @param pos.in POS metrics RDS input file.
 #' @param file.out Output RDS file.
+#' @export
 CombinedLog <- function(git.in, bugs.in, pos.in, file.out) {
   gitlog <- readRDS(git.in)
   gitlog$message <- NULL

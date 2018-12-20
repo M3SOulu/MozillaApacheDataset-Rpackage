@@ -5,6 +5,7 @@
 #' @param log.in List of git log input files (as a gzipped CSV).
 #' @param diff.in List of git diff input files (as a gzipped CSV).
 #' @param file.out Output RDS file.
+#' @export
 AggregateGit <- function(log.in, diff.in, file.out)  {
   ## Reading both Git logs and diffs. Only keep diffs with numeric
   ## added/removed lines (i.e. get rid of binary files). Aggregate diff
@@ -43,6 +44,7 @@ AggregateGit <- function(log.in, diff.in, file.out)  {
 #' @param bugs.in List of bugs input files (as a gzipped CSV).
 #' @param components.in List of components input files (as a gzipped CSV).
 #' @param file.out Output RDS file.
+#' @export
 AggregateJiraBugs <- function(bugs.in, components.in, file.out) {
   bugs <- rbindlist(mapply(function(f.bugs, f.comp) {
     logging::loginfo("Reading jira bugs for %s", f.bugs)
@@ -74,6 +76,7 @@ AggregateJiraBugs <- function(bugs.in, components.in, file.out) {
 #'
 #' @param files.in List of input files (as a gzipped CSV).
 #' @param file.out Output RDS file.
+#' @export
 AggregateJiraVersions <- function(files.in, file.out) {
   versions <- rbindlist(lapply(files.in, function(f) {
     logging::loginfo("Reading jira versions for %s", f)
@@ -91,6 +94,7 @@ AggregateJiraVersions <- function(files.in, file.out) {
 #'
 #' @param files.in List of input files (as a gzipped CSV).
 #' @param file.out Output RDS file.
+#' @export
 AggregateJiraComments <- function(files.in, file.out) {
   comments <- rbindlist(lapply(files.in, function(f) {
     logging::loginfo("Reading jira comments for %s", f)
@@ -116,6 +120,7 @@ AggregateJiraComments <- function(files.in, file.out) {
 #'
 #' @param files.in List of input files (as a gzipped CSV).
 #' @param file.out Output RDS file.
+#' @export
 AggregateBugzillaBugs <- function(files.in, file.out) {
   bugs <- rbindlist(lapply(files.in, function(f) {
     logging::loginfo("Reading Mozilla bugs for %s", f)
@@ -133,6 +138,7 @@ AggregateBugzillaBugs <- function(files.in, file.out) {
 #'
 #' @param files.in List of input files (as a gzipped CSV).
 #' @param file.out Output RDS file.
+#' @export
 AggregateBugzillaComments <- function(files.in, file.out) {
   comments <- rbindlist(lapply(files.in, function(f) {
     logging::loginfo("Reading Mozilla comments for %s", f)

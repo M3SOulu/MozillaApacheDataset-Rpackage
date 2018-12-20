@@ -50,6 +50,7 @@ NLoN <- function(text, model) {
 #' @param comments \code{data.table} object with comments.
 #' @param model NLoN model.
 #' @param limit Maximum number of comments to process in one chunk.
+#' @return Processed comments with NLoN.
 RunNLoN <- function(comments, model, limit) {
   ProcessChunk(comments, NLoN, limit, model)
 }
@@ -156,6 +157,7 @@ ProcessBugzillaComments <- function(comments) {
 #' @param src Source (jira or bugzilla).
 #' @param nlon.model NLoN model.
 #' @param limit Maximum number of comments to process at the same time.
+#' @export
 ProcessNLoN <- function(file.in, file.out, src, nlon.model, limit=100000) {
   NLoN <- function(comments) RunNLoN(comments, nlon.model, limit=limit)
   comments <- ReadFile(file.in)
@@ -177,6 +179,7 @@ ProcessNLoN <- function(file.in, file.out, src, nlon.model, limit=100000) {
 #' @param limit Maximum bumber of comments to process at the same time.
 #' @param nclusters Number of processes to use.
 #' @return Comments with one row per sentence.
+#' @export
 SplitSentences <- function(comments, limit=100000,
                            nclusters=parallel::detectCores()) {
   cl <- makeCluster(nclusters)
@@ -218,6 +221,7 @@ SplitSentences <- function(comments, limit=100000,
 #' @param limit Maxmimum number of comments to process at the same time.
 #' @param nclusters Number of processes to use.
 #' @return POS tagging result.
+#' @export
 POSTagging <- function(comments, limit=100000,
                        nclusters=parallel::detectCores()) {
   cl <- makeCluster(nclusters)
@@ -261,6 +265,7 @@ POSTagging <- function(comments, limit=100000,
 #'
 #' @param comments \code{data.table} object with comments.
 #' @return Natural language comments.
+#' @export
 NaturalLanguageComments <- function(comments) {
   comments <- comments[nlon == "NL" & line.type == 1,
                        list(text=paste(text, collapse="\n")),
@@ -277,6 +282,7 @@ NaturalLanguageComments <- function(comments) {
 #' @param file.out Output RDS file.
 #' @param FUNC The function.
 #' @param ... Additional parameters to pass to the function.
+#' @export
 ProcessComments <- function(file.in, file.out, FUNC, ...) {
   comments <- readRDS(file.in)
   comments <- ApplyFunctions(comments, FUNC, ...)
@@ -292,6 +298,7 @@ ProcessComments <- function(file.in, file.out, FUNC, ...) {
 #' @param file.out Output RDS file.
 #' @param FUNC The function.
 #' @param ... Additional parameters to pass to the function.
+#' @export
 AggregateComments <- function(files.in, file.out, FUNC, ...) {
   res <- rbindlist(lapply(files.in, function(f.in) {
     logging::loginfo(f.in)
@@ -308,6 +315,7 @@ AggregateComments <- function(files.in, file.out, FUNC, ...) {
 #'
 #' @param files.in Input RDS files of POS tagging.
 #' @param file.out Output RDS file.
+#' @export
 POSMetrics <- function(files.in, file.out) {
   AggregateComments(files.in, file.out, function(comments) {
     comments[, list(nwords=.N,
@@ -329,6 +337,7 @@ POSMetrics <- function(files.in, file.out) {
 #' @param files.in Input RDS files of POS tagging.
 #' @param buglog.in Bug log input RDS file.
 #' @param file.out Output RDS file.
+#' @export
 AggregatePOS <- function(files.in, buglog.in, file.out) {
   pos.tags <- c("``", ",", ":", ".", "''", "$", "#", "CC", "CD", "DT",
                 "EX", "FW", "IN", "JJ", "JJR", "JJS", "-LRB-", "LS",
@@ -352,6 +361,7 @@ AggregatePOS <- function(files.in, buglog.in, file.out) {
 #'
 #' @param files.in Input RDS files.
 #' @param file.out Output RDS file.
+#' @export
 Emoticons <- function(files.in, file.out) {
   AggregateComments(files.in, file.out, list(function(comments) {
     setkey(comments, source, bug.id, comment.id)
@@ -367,6 +377,7 @@ Emoticons <- function(files.in, file.out) {
 #' @param files.in Input RDS files.
 #' @param file.out Output RDS file.
 #' @param limit Maximum number of comments to process at the same time.
+#' @export
 SentiStrength <- function(files.in, file.out, limit=100000) {
   AggregateComments(files.in, file.out, function(comments) {
     comments <- ProcessChunk(comments, emotionFindeR::RunSentiAll,

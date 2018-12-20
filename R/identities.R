@@ -94,6 +94,7 @@ GitIdentities <- function(git.in) {
 #' @param identities.commits.out Output file for git identities.
 #' @param identities.bugs.out Output file for Jira and Bugzilla identities.
 #' @param identities.out Output file for all identities.
+#' @export
 Identities <- function(git.in, bugzilla.in, jira.in, identities.commits.out,
                        identities.bugs.out, identities.out) {
   people.bugzilla <- readRDS(bugzilla.in)[, .N, by=c("source", "author.email")]
@@ -291,6 +292,7 @@ BuildMergingGraph <- function(people, merging) {
 #'
 #' @param identities.in Input RDS file of identities.
 #' @param idmerging.out Output RDS file of identity merging.
+#' @export
 IdentityMerging <- function(identities.in, idmerging.out) {
   people <- read.csv("data/identities.csv", stringsAsFactors=FALSE)
   people <- as.data.table(people)
@@ -320,6 +322,7 @@ IdentityMerging <- function(identities.in, idmerging.out) {
 #' @param idmerging.in Input RDS file of identity merging.
 #' @param mozdev.in Input CSV file of mozilla developers.
 #' @return Mozilla developers with merged.id.
+#' @export
 MozillaDevelopers <- function(idmerging.in, mozdev.in) {
   idmerging <- fread(idmerging.in)
   mozdev <- fread(mozdev.in)
