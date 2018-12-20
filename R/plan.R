@@ -132,7 +132,8 @@ NLPPlan <- function(datadir) {
                                                POSTagging))
     evaluate_plan(plan, list(PRJ__=projects$project))
   })
-  bind_plans(evaluate_plan(bind_plans(plans), list(DATADIR__=datadir), rename=FALSE),
+  bind_plans(evaluate_plan(do.call(bind_plans, plans),
+                           list(DATADIR__=datadir), rename=FALSE),
              drake_plan(nlon.model=MakeNLoNModel()))
 }
 
