@@ -1,0 +1,13 @@
+Package: AutoTimeData
+Title: AutoTime data processing
+Version: 0.1
+Authors@R: person("Maëlick", "Claes", email = "maelick.claes@oulu.fi", role = c("aut", "cre"))
+Description: Data processing functions for AutoTime project analyses.
+Depends: R (>= 3.4.4), data.table, drake
+Imports: tidyr, lubridate, NLoN, logging, stringr, parallel, igraph,
+         AutoTimeUtils, emotionFindeR
+Suggests: R.utils
+License: GPL-3
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 6.1.1
