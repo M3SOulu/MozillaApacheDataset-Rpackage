@@ -24,6 +24,7 @@ ProcessChunk <- function(comments, FUNC, limit, ...) {
 #' Builds \code{NLoN} model.
 #'
 #' @return \code{NLoN} model.
+#' @export
 MakeNLoNModel <- function() {
   with(NLoN::nlon.data, NLoN::NLoNModel(text, rater2))
 }
