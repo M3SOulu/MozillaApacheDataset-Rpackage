@@ -8,15 +8,17 @@
 #' @param ... Addition parameters to pass to FUNC.
 #' @return Comments with added columns from processing with FUNC.
 ProcessChunk <- function(comments, FUNC, limit, ...) {
-  group <- 1:nrow(comments) %/% limit
-  res <- rbindlist(lapply(unique(group), function(i) {
-    logging::loginfo(Sys.time())
-    logging::loginfo("%d/%d", i + 1, length(unique(group)))
-    text <- comments[group == i, text]
-    FUNC(text, ...)
-  }))
-  cols <- !names(comments) %in% names(res)
-  cbind(comments[, cols, with=FALSE], res)
+  if (nrow(comments)) {
+    group <- 1:nrow(comments) %/% limit
+    res <- rbindlist(lapply(unique(group), function(i) {
+      logging::loginfo(Sys.time())
+      logging::loginfo("%d/%d", i + 1, length(unique(group)))
+      text <- comments[group == i, text]
+      FUNC(text, ...)
+    }))
+    cols <- !names(comments) %in% names(res)
+    cbind(comments[, cols, with=FALSE], res)
+  } else comments
 }
 
 #' Make NLoN Model.
@@ -92,8 +94,10 @@ ApplyFunctions <- function(comments, FUNC, ...) {
       FUNC <- list(FUNC)
     }
     if (!is.list(FUNC)) stop("FUNC must be a function or a list of functions.")
-    for (F in FUNC) {
-      comments <- F(comments, ...)
+    if (nrow(comments)) {
+      for (F in FUNC) {
+        comments <- F(comments, ...)
+      }
     }
     comments
 }
