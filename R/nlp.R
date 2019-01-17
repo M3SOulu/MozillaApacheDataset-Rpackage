@@ -370,7 +370,7 @@ AggregatePOS <- function(files.in, buglog.in, file.out) {
 Emoticons <- function(files.in, file.out) {
   AggregateComments(files.in, file.out, list(function(comments) {
     setkey(comments, source, bug.id, comment.id)
-    emotionFindeR::EmoticonsAndEmojis(comments)[type == "emojis"]
+    emotionFindeR::EmoticonsAndEmojis(comments)
   }, emotionFindeR::TextBeforeAfterEmoticons,
   emotionFindeR::EmoticonsSentiStrength))
 }
