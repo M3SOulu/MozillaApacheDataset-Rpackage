@@ -94,10 +94,10 @@ ApplyFunctions <- function(comments, FUNC, ...) {
       FUNC <- list(FUNC)
     }
     if (!is.list(FUNC)) stop("FUNC must be a function or a list of functions.")
-    if (nrow(comments)) {
       for (F in FUNC) {
-        comments <- F(comments, ...)
-      }
+        if (nrow(comments)) {
+          comments <- F(comments, ...)
+        } else break
     }
     comments
 }
