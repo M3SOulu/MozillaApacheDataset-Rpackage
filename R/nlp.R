@@ -372,6 +372,7 @@ Emoticons <- function(files.in, file.out) {
     setkey(comments, source, bug.id, comment.id)
     emotionFindeR::EmoticonsAndEmojis(comments)
   }, emotionFindeR::TextBeforeAfterEmoticons,
+  function(emoticons) emoticons[type != "slack"],
   emotionFindeR::EmoticonsSentiStrength))
 }
 
