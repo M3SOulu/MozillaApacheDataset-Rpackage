@@ -3,6 +3,7 @@
 export(AggregateBugzillaBugs)
 export(AggregateBugzillaComments)
 export(AggregateComments)
+export(AggregateEmoticons)
 export(AggregateGit)
 export(AggregateJiraBugs)
 export(AggregateJiraComments)

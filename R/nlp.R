@@ -189,10 +189,9 @@ SplitSentences <- function(comments, limit=100000,
                            nclusters=parallel::detectCores()) {
   cl <- makeCluster(nclusters)
   clusterEvalQ(cl, {
-    library(openNLP)
     library(NLP)
     library(data.table)
-    sent_annotator <- Maxent_Sent_Token_Annotator()
+    sent_annotator <- openNLP::Maxent_Sent_Token_Annotator()
   })
 
   logging::loginfo("Tokenization")
@@ -201,7 +200,7 @@ SplitSentences <- function(comments, limit=100000,
       data.table(sentences=parLapply(cl, text, function(text) {
         if (nchar(text)) {
           try({
-            tokenized <- annotate(text, sent_annotator)
+            tokenized <- NLP::annotate(text, sent_annotator)
             as.data.table(tokenized)[type == "sentence", list(start, end)]
           })
         }
@@ -231,12 +230,11 @@ POSTagging <- function(comments, limit=100000,
                        nclusters=parallel::detectCores()) {
   cl <- makeCluster(nclusters)
   clusterEvalQ(cl, {
-    library(openNLP)
     library(NLP)
     library(data.table)
-    sent_annotator <- Maxent_Sent_Token_Annotator()
-    word_annotator <- Maxent_Word_Token_Annotator()
-    pos_annotator <- Maxent_POS_Tag_Annotator()
+    sent_annotator <- openNLP::Maxent_Sent_Token_Annotator()
+    word_annotator <- openNLP::Maxent_Word_Token_Annotator()
+    pos_annotator <- openNLP::Maxent_POS_Tag_Annotator()
   })
 
   logging::loginfo("POS Tagging")
@@ -245,8 +243,8 @@ POSTagging <- function(comments, limit=100000,
       data.table(sentences=parLapply(cl, text, function(text) {
         if (nchar(text)) {
           try({
-            tokenized <- annotate(text, list(sent_annotator, word_annotator))
-            res <- as.data.table(annotate(text, pos_annotator, tokenized))
+            tokenized <- NLP::annotate(text, list(sent_annotator, word_annotator))
+            res <- as.data.table(NLP::annotate(text, pos_annotator, tokenized))
             res[type == "word", list(start, end,
                                      pos=sapply(features, function(x) x$POS))]
           })
@@ -309,7 +307,7 @@ AggregateComments <- function(files.in, file.out, FUNC, ...) {
     logging::loginfo(f.in)
     comments <- readRDS(f.in)
     ApplyFunctions(comments, FUNC, ...)
-  }))
+  }), fill=TRUE)
   saveRDS(res, file.out)
   invisible(NULL)
 }
@@ -362,18 +360,31 @@ AggregatePOS <- function(files.in, buglog.in, file.out) {
 
 #' Emoticons
 #'
-#' Detects emoticons from comments.
+#' Aggregate emoticons.
 #'
 #' @param files.in Input RDS files.
 #' @param file.out Output RDS file.
 #' @export
-Emoticons <- function(files.in, file.out) {
-  AggregateComments(files.in, file.out, list(function(comments) {
-    setkey(comments, source, bug.id, comment.id)
-    emotionFindeR::EmoticonsAndEmojis(comments)
-  }, emotionFindeR::TextBeforeAfterEmoticons,
-  function(emoticons) emoticons[type != "slack"],
-  emotionFindeR::EmoticonsSentiStrength))
+AggregateEmoticons <- function(files.in, file.out) {
+  AggregateComments(files.in, file.out,
+                    list(emotionFindeR::TextBeforeAfterEmoticons,
+                         emotionFindeR::EmoticonsSentiStrength,
+                         emotionFindeR::TokenizeEmoticons))
+}
+
+#' Emoticons
+#'
+#' Identify emoticons
+#'
+#' @param comments \code{data.table} object with comments.
+#' @return Emoticons.
+#' @export
+Emoticons <- function(comments) {
+  setkey(comments, source, bug.id, comment.id)
+  emoticons <- emotionFindeR::EmoticonsAndEmojis(comments)
+  if (nrow(emoticons)) {
+    emoticons[type != "slack"]
+  }
 }
 
 #' SentiStrength

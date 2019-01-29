@@ -86,15 +86,16 @@ NLPAggregatePlan <- function(datadir) {
                      pos=AggregatePOS(bugpos,
                                       file_in("DATADIR__/filtered_buglog.rds"),
                                       file_out("DATADIR__/pos.rds")),
-                     emoticons=Emoticons(bugcomments,
-                                         file_out("DATADIR__/emoticons.rds")),
+                     emoticons.agg=AggregateEmoticons(emoticons,
+                                                      file_out("DATADIR__/emoticons.rds")),
                      sentistrength=SentiStrength(bugsentences,
                                                  file_out("DATADIR__/comments-valence-arousal.rds")))
   bind_plans(evaluate_plan(plan, list(DATADIR__=datadir), rename=FALSE),
              NLPInFiles("raw/bugcomments", "raw.bugcomments", datadir),
              NLPInFiles("bugcomments", "bugcomments", datadir),
              NLPInFiles("bugsentences", "bugsentences", datadir),
-             NLPInFiles("bugpos", "bugpos", datadir))
+             NLPInFiles("bugpos", "bugpos", datadir),
+             NLPInFiles("emoticons", "emoticons", datadir))
 }
 
 #' NLP Plan
@@ -130,6 +131,11 @@ NLPPlan <- function(datadir) {
     plan <- drake_plan(run.pos=ProcessComments(file_in("DATADIR__/bugcomments/PRJ__.rds"),
                                                file_out("DATADIR__/bugpos/PRJ__.rds"),
                                                POSTagging))
+    evaluate_plan(plan, list(PRJ__=projects$project))
+  }, {
+    plan <- drake_plan(find.emoticons=ProcessComments(file_in("DATADIR__/bugcomments/PRJ__.rds"),
+                                                      file_out("DATADIR__/emoticons/PRJ__.rds"),
+                                                      Emoticons))
     evaluate_plan(plan, list(PRJ__=projects$project))
   })
   bind_plans(evaluate_plan(do.call(bind_plans, plans),
