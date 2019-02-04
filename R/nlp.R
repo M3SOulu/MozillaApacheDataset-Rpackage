@@ -367,9 +367,9 @@ AggregatePOS <- function(files.in, buglog.in, file.out) {
 #' @export
 AggregateEmoticons <- function(files.in, file.out) {
   AggregateComments(files.in, file.out,
-                    list(emotionFindeR::TextBeforeAfterEmoticons,
-                         emotionFindeR::EmoticonsSentiStrength,
-                         emotionFindeR::TokenizeEmoticons))
+                    list(AutoTimeNLP::TextBeforeAfterEmoticons,
+                         AutoTimeNLP::EmoticonsSentiStrength,
+                         function(x) AutoTimeNLP::Tokenize(x, "emoticon")))
 }
 
 #' Emoticons
@@ -381,7 +381,7 @@ AggregateEmoticons <- function(files.in, file.out) {
 #' @export
 Emoticons <- function(comments) {
   setkey(comments, source, bug.id, comment.id)
-  emoticons <- emotionFindeR::EmoticonsAndEmojis(comments)
+  emoticons <- AutoTimeNLP::EmoticonsAndEmojis(comments)
   if (nrow(emoticons)) {
     emoticons[type != "slack"]
   }
@@ -397,9 +397,9 @@ Emoticons <- function(comments) {
 #' @export
 SentiStrength <- function(files.in, file.out, limit=100000) {
   AggregateComments(files.in, file.out, function(comments) {
-    comments <- ProcessChunk(comments, emotionFindeR::RunSentiAll,
+    comments <- ProcessChunk(comments, AutoTimeNLP::RunSentiAll,
                              limit, "text")
-    ## comments <- cbind(comments, emotionFindeR::RunSentiAll(comments$text, "text"))
+    ## comments <- cbind(comments, AutoTimeNLP::RunSentiAll(comments$text, "text"))
     comments$text <- NULL
     comments
   })
