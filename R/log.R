@@ -170,7 +170,7 @@ BugLog <- function(idmerging.in, bugzilla.comments.in, bugzilla.bugs.in,
                                      resolution, severity)],
                 jira.bugs[, list(source, bug.id, product, component, status,
                                  resolution, severity)])
-  buglog <- merge(bugs, rbind(jira, bugzilla, fill=TRUE),
+  buglog <- merge(rbind(jira, bugzilla, fill=TRUE), bugs,
                   by=c("source", "bug.id"))
   saveRDS(buglog, buglog.out)
   invisible(NULL)
