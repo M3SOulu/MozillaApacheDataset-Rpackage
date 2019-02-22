@@ -427,3 +427,29 @@ CommentsWithoutEmoticons <- function(files.in, buglog, emoticons, file.out) {
     merge(comments, buglog, by=c("source", "bug.id", "comment.id"))
   })
 }
+
+#' Sample Comments
+#'
+#' @param file.in Input RDS file containing the comments.
+#' @param file.out Output RDS file.
+#' @param seed Optional seed to initialize the RNG.
+#' @param sample.size Size of the sample.
+#' @export
+SampleComments <- function(file.in, file.out, seed=NULL, sample.size=1000000) {
+  comments <- readRDS(file.in)
+  comments <- comments[!duplicated(text)]
+  if (sample.size < nrow(comments)) {
+    logging::loginfo("Selecting sample")
+    if (!is.null(seed)) {
+      set.seed(seed)
+    }
+    comments <- comments[sample(nrow(comments), sample.size)]
+  }
+  logging::loginfo("Running SentiStrength")
+  comments <- cbind(comments, AutoTimeNLP::RunSentiAll(comments$text))
+  logging::loginfo("Tokenizing")
+  comments <- AutoTimeNLP::Tokenize(comments,
+                                    c("source", "bug.id", "comment.id"),
+                                    "text")
+  saveRDS(comments, file.out)
+}
