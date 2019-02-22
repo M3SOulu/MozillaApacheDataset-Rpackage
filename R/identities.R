@@ -294,7 +294,7 @@ BuildMergingGraph <- function(people, merging) {
 #' @param idmerging.out Output RDS file of identity merging.
 #' @export
 IdentityMerging <- function(identities.in, idmerging.out) {
-  people <- read.csv("data/identities.csv", stringsAsFactors=FALSE)
+  people <- read.csv(identities.in, stringsAsFactors=FALSE)
   people <- as.data.table(people)
 
   ## Apache fix
