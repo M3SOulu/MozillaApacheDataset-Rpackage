@@ -404,3 +404,26 @@ SentiStrength <- function(files.in, file.out, limit=100000) {
     comments
   })
 }
+
+#' Comments without emoticons
+#'
+#' Gets comments without emoticons from people who have used
+#' emoticons.
+#'
+#' @param files.in Input RDS files with comments.
+#' @param buglog Bug comment log.
+#' @param emoticons Emoticons.
+#' @param file.out Output RDS file.
+#' @export
+CommentsWithoutEmoticons <- function(files.in, buglog, emoticons, file.out) {
+  emoticons <- readRDS(emoticons)
+  buglog <- readRDS(buglog)
+  subset <- unique(emoticons[, list(source, bug.id, comment.id)])
+  people <- merge(buglog, subset, by=c("source", "bug.id", "comment.id"))
+  buglog <- buglog[merged.id %in% unique(people$merged.id)]
+  setkey(buglog, source, bug.id, comment.id)
+  buglog <- buglog[!subset, list(source, bug.id, comment.id)]
+  AggregateComments(files.in, file.out, function(comments) {
+    merge(comments, buglog, by=c("source", "bug.id", "comment.id"))
+  })
+}
