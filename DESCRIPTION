@@ -3,7 +3,7 @@ Title: AutoTime data processing
 Version: 0.1
 Authors@R: person("Maëlick", "Claes", email = "maelick.claes@oulu.fi", role = c("aut", "cre"))
 Description: Data processing functions for AutoTime project analyses.
-Depends: R (>= 3.4.4), data.table, drake
+Depends: R (>= 3.4.0), data.table, drake
 Imports: tidyr, lubridate, NLoN, logging, stringr, parallel, igraph,
          AutoTimeUtils, AutoTimeNLP, openNLP, NLP
 Suggests: R.utils
