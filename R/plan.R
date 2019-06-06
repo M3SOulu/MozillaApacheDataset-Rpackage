@@ -77,11 +77,19 @@ LogPlan <- function(datadir) {
 #' Make a plan for aggregating natural language processing of issue comments.
 #'
 #' @param datadir Directory where data is stored.
+#' @param senti4sd.path Path where Senti4SD jar file is located.
+#' @param senti4sd.chunk.size Maximum number of text element to
+#'   consider for one single run of Senti4SD.
+#' @param senti4sd.memory.limit Maximum amount of memory (in GB) to
+#'   use for one run of Senti4SD. Overrides \code{senti4sd.chunk.size}
+#'   by setting it to \code{500 * senti4sd.memory.limit}.
 #' @return a drake plan.
 #' @export
-NLPAggregatePlan <- function(datadir) {
+NLPAggregatePlan <- function(datadir, senti4sd.path, senti4sd.chunk.size=1000,
+                             senti4sd.memory.limit=0) {
   projects <- NLPProjects(datadir)
-  plan <- drake_plan(pos.metrics=POSMetrics(bugpos,
+  plan <- drake_plan(senti4sd.model=AutoTimeNLP::Senti4SDModel(file_out("SENTI4SD__/modelLiblinear.Rda")),
+                     pos.metrics=POSMetrics(bugpos,
                                             file_out("DATADIR__/pos-metrics.rds")),
                      pos=AggregatePOS(bugpos,
                                       file_in("DATADIR__/filtered_buglog.rds"),
@@ -92,12 +100,26 @@ NLPAggregatePlan <- function(datadir) {
                                                           file_out("DATADIR__/noemoticons.rds")),
                      noemoticons.sample=SampleComments(file_in("DATADIR__/noemoticons.rds"),
                                                        file_out("DATADIR__/noemoticons_sample.rds"),
+                                                       senti4sd.model,
+                                                       "SENTI4SD_PATH__",
+                                                       SENTI4SD_CHUNK__,
+                                                       SENTI4SD_MEMORY__,
                                                        42),
                      emoticons.agg=AggregateEmoticons(emoticons,
                                                       file_out("DATADIR__/emoticons.rds")),
+                     emoticons.senti=EmoticonsSentiment(file_in("DATADIR__/emoticons.rds"),
+                                                        file_out("DATADIR__/emoticons_senti.rds"),
+                                                        senti4sd.model,
+                                                        "SENTI4SD_PATH__",
+                                                        SENTI4SD_CHUNK__,
+                                                        SENTI4SD_MEMORY__),
                      sentistrength=SentiStrength(bugsentences,
                                                  file_out("DATADIR__/comments-valence-arousal.rds")))
-  bind_plans(evaluate_plan(plan, list(DATADIR__=datadir), rename=FALSE),
+  bind_plans(evaluate_plan(plan, list(SENTI4SD__=senti4sd.path,
+                                      SENTI4SD_PATH__=senti4sd.path,
+                                      SENTI4SD_CHUNK__=senti4sd.chunk.size,
+                                      SENTI4SD_MEMORY__=senti4sd.memory.limit,
+                                      DATADIR__=datadir), rename=FALSE),
              NLPInFiles("raw/bugcomments", "raw.bugcomments", datadir),
              NLPInFiles("bugcomments", "bugcomments", datadir),
              NLPInFiles("bugsentences", "bugsentences", datadir),
@@ -240,13 +262,21 @@ RawPlans <- function(datadir) {
 #' Make the full plan.
 #'
 #' @param datadir Directory where data is stored.
+#' @param senti4sd.path Path where Senti4SD jar file is located.
+#' @param senti4sd.chunk.size Maximum number of text element to
+#'   consider for one single run of Senti4SD.
+#' @param senti4sd.memory.limit Maximum amount of memory (in GB) to
+#'   use for one run of Senti4SD. Overrides \code{senti4sd.chunk.size}
+#'   by setting it to \code{500 * senti4sd.memory.limit}.
 #' @return a drake plan.
 #' @export
-FullPlan <- function(datadir) {
+FullPlan <- function(datadir, senti4sd.path,
+                     senti4sd.chunk.size=1000, senti4sd.memory.limit=0) {
   bind_plans(RawPlans(datadir),
              AggregatePlan(datadir),
              IdentitiesPlan(datadir),
              LogPlan(datadir),
              NLPPlan(datadir),
-             NLPAggregatePlan(datadir))
+             NLPAggregatePlan(datadir, senti4sd.path,
+                              senti4sd.chunk.size, senti4sd.memory.limit))
 }

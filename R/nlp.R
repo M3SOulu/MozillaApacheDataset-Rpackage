@@ -368,8 +368,33 @@ AggregatePOS <- function(files.in, buglog.in, file.out) {
 AggregateEmoticons <- function(files.in, file.out) {
   AggregateComments(files.in, file.out,
                     list(AutoTimeNLP::TextBeforeAfterEmoticons,
-                         AutoTimeNLP::EmoticonsSentiStrength,
                          function(x) AutoTimeNLP::Tokenize(x, "emoticon")))
+}
+
+#' Emoticons sentiment analysis
+#'
+#' Run SentiStrength and Senti4SD on emoticon data.
+#'
+#' @param file.in Input RDS files.
+#' @param file.out Output RDS file.
+#' @param senti4sd.model The LiblineaR model to use for Senti4SD.
+#' @param senti4sd.path Path where Senti4SD jar file is located.
+#' @param senti4sd.chunk.size Maximum number of text element to
+#'   consider for one single run of Senti4SD.
+#' @param senti4sd.memory.limit Maximum amount of memory (in GB) to
+#'   use for one run of Senti4SD. Overrides \code{senti4sd.chunk.size}
+#'   by setting it to \code{500 * senti4sd.memory.limit}.
+#' @export
+EmoticonsSentiment <- function(file.in, file.out, senti4sd.model,
+                               senti4sd.path,
+                               senti4sd.chunk.size=1000,
+                               senti4sd.memory.limit=0) {
+  emoticons <- readRDS(file.in)
+  emoticons <- ApplyFunctions(emoticons, AutoTimeNLP::EmoticonsSentiStrength)
+  emoticons <- ApplyFunctions(emoticons, AutoTimeNLP::EmoticonsSenti4SD,
+                              senti4sd.model, senti4sd.path,
+                              senti4sd.chunk.size, senti4sd.memory.limit)
+  saveRDS(emoticons, file.out)
 }
 
 #' Emoticons
@@ -405,6 +430,30 @@ SentiStrength <- function(files.in, file.out, limit=100000) {
   })
 }
 
+#' Senti4SD
+#'
+#' Runs Senti4SD on comments.
+#'
+#' @param files.in Input RDS files.
+#' @param file.out Output RDS file.
+#' @param model The LiblineaR model to use for Senti4SD.
+#' @param senti4sd.path Path where Senti4SD jar file is located.
+#' @param chunk.size Maximum number of text element to consider for
+#'   one single run of Senti4SD.
+#' @param memory.limit Maximum amount of memory (in GB) to use for one
+#'   run of Senti4SD. Overrides \code{senti4sd.chunk.size} by setting
+#'   it to \code{500 * senti4sd.memory.limit}.
+#' @export
+Senti4SD <- function(files.in, file.out, model, senti4sd.path,
+                     chunk.size=1000, memory.limit=0) {
+  AggregateComments(files.in, file.out, function(comments) {
+    comments <- AutoTimeNLP::RunSenti4SD(comments, model, senti4sd.path,
+                                         chunk.size, memory.limit)
+    comments$text <- NULL
+    comments
+  })
+}
+
 #' Comments without emoticons
 #'
 #' Gets comments without emoticons from people who have used
@@ -432,10 +481,20 @@ CommentsWithoutEmoticons <- function(files.in, buglog, emoticons, file.out) {
 #'
 #' @param file.in Input RDS file containing the comments.
 #' @param file.out Output RDS file.
+#' @param senti4sd.model The LiblineaR model to use for Senti4SD.
+#' @param senti4sd.path Path where Senti4SD jar file is located.
+#' @param senti4sd.chunk.size Maximum number of text element to
+#'   consider for one single run of Senti4SD.
+#' @param senti4sd.memory.limit Maximum amount of memory (in GB) to
+#'   use for one run of Senti4SD. Overrides \code{senti4sd.chunk.size}
+#'   by setting it to \code{500 * senti4sd.memory.limit}.
 #' @param seed Optional seed to initialize the RNG.
 #' @param sample.size Size of the sample.
 #' @export
-SampleComments <- function(file.in, file.out, seed=NULL, sample.size=1000000) {
+SampleComments <- function(file.in, file.out, senti4sd.model,
+                           senti4sd.path, senti4sd.chunk.size=1000,
+                           senti4sd.memory.limit=0, seed=NULL,
+                           sample.size=1000000) {
   comments <- readRDS(file.in)
   comments <- comments[!duplicated(text)]
   if (sample.size < nrow(comments)) {
@@ -447,6 +506,11 @@ SampleComments <- function(file.in, file.out, seed=NULL, sample.size=1000000) {
   }
   logging::loginfo("Running SentiStrength")
   comments <- cbind(comments, AutoTimeNLP::RunSentiAll(comments$text))
+  logging::loginfo("Running Senti4SD")
+  comments <- AutoTimeNLP::RunSenti4SD(comments, senti4sd.model,
+                                       senti4sd.path,
+                                       senti4sd.chunk.size,
+                                       senti4sd.memory.limit)
   logging::loginfo("Tokenizing")
   comments <- AutoTimeNLP::Tokenize(comments,
                                     c("source", "bug.id", "comment.id"),
