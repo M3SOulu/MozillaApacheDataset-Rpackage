@@ -363,12 +363,18 @@ AggregatePOS <- function(files.in, buglog.in, file.out) {
 #' Aggregate emoticons.
 #'
 #' @param files.in Input RDS files.
+#' @param file.buglog RDS file containing buglog.
 #' @param file.out Output RDS file.
 #' @export
-AggregateEmoticons <- function(files.in, file.out) {
+AggregateEmoticons <- function(files.in, file.buglog, file.out) {
   AggregateComments(files.in, file.out,
                     list(AutoTimeNLP::TextBeforeAfterEmoticons,
                          function(x) AutoTimeNLP::Tokenize(x, "emoticon")))
+  emoticons <- readRDS(file.out)
+  buglog <- readRDS(file.buglog)
+  emoticons <- merge(buglog[, list(source, bug.id, comment.id, product)],
+                     emoticons, by=c("source", "bug.id", "comment.id"))
+  saveRDS(emoticons, file.out)
 }
 
 #' Emoticons sentiment analysis
