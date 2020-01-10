@@ -111,7 +111,7 @@ ApplyFunctions <- function(comments, FUNC, ...) {
 ProcessJiraComments <- function(comments) {
   comments <- comments[, list(source=project, bug.id, comment.id=1:.N,
                               text=strsplit(body, "\n"), line.type=1)]
-  tidyr::unnest(comments)
+  as.data.table(tidyr::unnest(comments))
 }
 
 #' Process Bugzilla comments
@@ -210,7 +210,8 @@ SplitSentences <- function(comments, limit=100000,
   logging::loginfo("%f seconds ellapsed", t[3])
 
   stopCluster(cl)
-  comments <- tidyr::unnest(comments[sapply(comments$sentences, is.data.frame)])
+  comments <- comments[sapply(comments$sentences, is.data.frame)]
+  comments <- as.data.table(tidyr::unnest(comments, cols="sentences"))
   comments[, text := gsub("\\s+", " ", substr(text, start, end))]
   comments$start <- NULL
   comments$end <- NULL
@@ -255,7 +256,8 @@ POSTagging <- function(comments, limit=100000,
   logging::loginfo("%f seconds ellapsed", t[3])
 
   stopCluster(cl)
-  comments <- tidyr::unnest(comments[sapply(comments$sentences, is.data.frame)])
+  comments <- comments[sapply(comments$sentences, is.data.frame)]
+  comments <- as.data.table(tidyr::unnest(comments, cols="sentences"))
   comments[, text := substr(text, start, end)]
   comments$start <- NULL
   comments$end <- NULL
