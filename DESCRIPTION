@@ -5,7 +5,7 @@ Authors@R: person("Maëlick", "Claes", email = "maelick.claes@oulu.fi", role = c
 Description: Data processing functions for AutoTime project analyses.
 Depends: R (>= 3.4.0), data.table, drake
 Imports: tidyr, lubridate, NLoN, logging, stringr, parallel, igraph,
-         AutoTimeUtils, AutoTimeNLP, openNLP, NLP
+         AutoTimeUtils, AutoTimeNLP, openNLP, NLP, arrow
 Suggests: R.utils
 License: GPL-3
 Encoding: UTF-8

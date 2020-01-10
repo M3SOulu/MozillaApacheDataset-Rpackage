@@ -258,6 +258,37 @@ RawPlans <- function(datadir) {
              drake_plan(raw.nlp=c(raw.bugzilla.comments, raw.jira.comments)))
 }
 
+#' RDS to Parquet
+#'
+#' Convert RDS data.frame to Apache Parquet file.
+#'
+#' @param file.in Input file stored in RDS.
+#' @param file.out Output Parquet file.
+#' @param compression Compression to use for Parquet file.
+#' @export
+RDSToParquet <- function(file.in, file.out, compression=NULL) {
+  table <- readRDS(file.in)
+  arrow::write_parquet(table, file.out, compression)
+}
+
+#' Parquet Plan
+#'
+#' Make a plan for converting RDS files to Parquet
+#'
+#' @param datadir Directory where data is stored.
+#' @return a drake plan.
+#' @export
+ParquetPlan <- function(datadir) {
+  names <- c("buglog", "combined_log", "git_filtered", "git-tz-history",
+             "filtered_buglog", "comments-valence-arousal",
+             "emoticons", "emoticons.senti",
+             "noemoticons", "noemoticons_sample",
+             "pos-metrics", "pos")
+  plan <- drake_plan(rds2parquet=RDSToParquet(file_in("DATADIR__/NAME__.rds"),
+                                              file_out("DATADIR__/NAME__.parquet")))
+  evaluate_plan(plan, list(DATADIR__=datadir, NAME__=names))
+}
+
 #' Full Plan
 #'
 #' Make the full plan.
@@ -279,5 +310,6 @@ FullPlan <- function(datadir, senti4sd.path,
              LogPlan(datadir),
              NLPPlan(datadir),
              NLPAggregatePlan(datadir, senti4sd.path,
-                              senti4sd.chunk.size, senti4sd.memory.limit))
+                              senti4sd.chunk.size, senti4sd.memory.limit),
+             ParquetPlan(datadir))
 }
