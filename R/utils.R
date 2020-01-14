@@ -71,3 +71,15 @@ CleanText <- function(text) {
   text <- str_replace_all(text,"[^[:graph:]\n]", " ")
   gsub("(^ +)|( +$)", "", text)
 }
+
+ReadParquet <- function(filename) {
+  df <- arrow::read_parquet(filename)
+  df <- as.data.table(df)
+  setnames(df, gsub("_", ".", names(df), fixed=TRUE))
+  df
+}
+
+WriteParquet <- function(df, filename, compression="gzip") {
+  setnames(df, gsub(".", "_", names(df), fixed=TRUE))
+  arrow::write_parquet(df, filename, compression=compression)
+}
