@@ -23,7 +23,7 @@ ReadFile <- function(filename, use.fread=TRUE) {
 #' @param x The filename.
 #' @return The file extension.
 ParseExtension <- function(x) {
-  pos <- regexpr("(\\.([[:alnum:]]+))+$", x)
+  pos <- regexpr("(\\.([[:alnum:]]+))$", x)
   ifelse(pos > -1L, substring(x, pos + 1L), "")
 }
 
