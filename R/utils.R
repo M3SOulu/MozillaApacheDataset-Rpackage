@@ -83,3 +83,5 @@ WriteParquet <- function(df, filename, compression="gzip") {
   setnames(df, gsub(".", "_", names(df), fixed=TRUE))
   arrow::write_parquet(df, filename, compression=compression)
 }
+
+RemoveNANames <- function(l) l[!is.na(names(l))]
