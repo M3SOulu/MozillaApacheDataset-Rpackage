@@ -41,7 +41,7 @@ LocalTime <- function(time, tz) {
 #'
 #' @param text The text.
 #' @return The text without URL.
-RemoveURL <- function(text) gsub("https?://[[:graph:]]*", "", text)
+RemoveURL <- function(text) gsub("https?://[[:graph:]]*", "<url>", text)
 
 #' Clean Text
 #'
