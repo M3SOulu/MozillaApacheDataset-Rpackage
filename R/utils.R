@@ -1,19 +1,3 @@
-#' Read File
-#'
-#' Read a CSV file and returns it as a \code{data.table} object.
-#'
-#' @param filename The CSV file name.
-#' @param use.fread Whether to (try) to use \code{data.table::fread} or not.
-#' @return The CSV file as a \code{data.table} object.
-ReadFile <- function(filename, use.fread=TRUE) {
-  ReadCSV <- function(e) as.data.table(read.csv(filename, stringsAsFactors=FALSE))
-  if (use.fread) {
-    tryCatch(fread(cmd=NULL), error=ReadCSV)
-  } else {
-    ReadCSV(NULL)
-  }
-}
-
 #' Parse Extension
 #'
 #' Parses the extension of a filename by taking into account multiple
@@ -72,16 +56,48 @@ CleanText <- function(text) {
   gsub("(^ +)|( +$)", "", text)
 }
 
-ReadParquet <- function(filename) {
-  df <- arrow::read_parquet(filename)
-  df <- as.data.table(df)
-  setnames(df, gsub("_", ".", names(df), fixed=TRUE))
+#' Remove NA Names
+#'
+#' Removes from a list columns which names are NA.
+#'
+#' @param l List.
+#' @return The list without columns which names are NA.
+RemoveNANames <- function(l) l[!is.na(names(l))]
+
+#' Remove Columns
+#'
+#' Removes columns from a data.frame or list.
+#'
+#' @param df Data.frame or list.
+#' @param cols Vector of columns.
+#' @export
+RemoveColumns <- function(df, cols) {
+  for (col in cols) {
+    df[[col]] <- NULL
+  }
   df
 }
 
-WriteParquet <- function(df, filename, compression="gzip") {
-  setnames(df, gsub(".", "_", names(df), fixed=TRUE))
-  arrow::write_parquet(df, filename, compression=compression)
+#' Remove Text Columns
+#'
+#' Removes "text" and "raw.text" columns from a data.frame.
+#' @param df Data.frame object.
+#' @return The data.frame object without text and raw.text columns.
+#' @export
+RemoveTextCols <- function(df) {
+  RemoveColumns(df, c("text", "raw.text"))
 }
 
-RemoveNANames <- function(l) l[!is.na(names(l))]
+#' Subset columns
+#'
+#' Takes a subset of columns from a \code{data.table} objects. Doesn't
+#' throw error if columns are missing.
+#'
+#' @param table \code{data.table} object.
+#' @param cols Columns to subset.
+#' @return The subset of the table.
+#' @export
+SubsetColumns <- function(table, cols) {
+  cols <- cols[cols %in% names(table)]
+  table[, cols, with=FALSE]
+}
