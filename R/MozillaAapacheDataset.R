@@ -1,9 +1,10 @@
-#' MozillaAapacheDataset: AutoTime data processing.
+#' MozillaAapacheDataset: data processing of 20-MAD dataset.
 #'
-#' Data processing functions for AutoTime project analyses.
+#' Data processing functions for the 20 years of Mozilla and Apache
+#' Development dataset.
 #'
 #' @docType package
-#' @name MozillaAapacheDataset
+#' @name MozillaApacheDataset
 #' @import data.table
 #' @importFrom drake drake_plan evaluate_plan bind_plans gather_plan
 #' @import NLoN
