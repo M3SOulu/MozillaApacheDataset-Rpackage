@@ -6,7 +6,7 @@ Description: Data processing functions for generating the 20MAD
              dataset (20 years of Apache and Mozilla Development).
 Depends: R (>= 3.4.0), data.table, drake
 Imports: tidyr, lubridate, NLoN, logging, stringr, parallel, igraph,
-         AutoTimeUtils, AutoTimeNLP, openNLP, NLP, arrow, jsonlite, magrittr
+         AutoTimeNLP, openNLP, NLP, arrow, jsonlite, magrittr
 Suggests: R.utils
 License: GPL-3
 Encoding: UTF-8
