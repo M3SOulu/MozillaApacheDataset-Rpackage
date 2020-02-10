@@ -1,12 +1,12 @@
 multi.and.re <- "[^[:alnum:]]and[^[:alnum:]]"
 multi.extract.re <- "^([^<]+<[^>]+>)(.*[[:alnum:]].*)$"
-email.re1 <- "^(.*)<([^<>]+)>.*$"
+email.re1 <- "^(.*)<([^<>]+)>?.*$"
 email.re2 <- "^([^[:blank:]]+@[^[:blank:]]+).*$"
 email.re3 <- "^(.*)[[:blank:]]([^[:blank:]]+@[^[:blank:]]+).*$"
 
 #' Split author
 #'
-#' Split author fields based on various regex.
+#' Split Git author fields based on various regex.
 #'
 #' @param author.key The author fields.
 #' @return A list of splitted authors.
@@ -22,29 +22,26 @@ SplitAuthor <- function(author.key) {
 
 #' Extract Email
 #'
-#' Extraction email from author fields.
+#' Extracts email from Git author fields.
 #'
-#' @param author The author fields.
+#' @param person The fields.
 #' @return The author fields as a \code{data.table} object with the
 #'   author field, author name amd author email.
-ExtractEmail <- function(author) {
-  if (grepl(email.re1, author)) {
-    ## print("1")
-    data.table(author,
-               author.name=sub(email.re1, "\\1", author),
-               author.email=sub(email.re1, "\\2", author))
-  } else if (grepl(email.re2, author)) {
-    ## print("2")
-    data.table(author,
-               author.name=sub(email.re2, NA_character_, author),
-               author.email=sub(email.re2, "\\1", author))
+ExtractEmail <- function(person) {
+  if (grepl(email.re1, person)) {
+    data.table(person,
+               person.name=sub(email.re1, "\\1", person),
+               person.email=sub(email.re1, "\\2", person))
+  } else if (grepl(email.re2, person)) {
+    data.table(person,
+               person.name=sub(email.re2, NA_character_, person),
+               person.email=sub(email.re2, "\\1", person))
 
-  } else if (grepl(email.re3, author)) {
-    ## print("3")
-    data.table(author,
-               author.name=sub(email.re3, "\\1", author),
-               author.email=sub(email.re3, "\\2", author))
-  } else data.table(author, author.name=author, author.email=NA_character_)
+  } else if (grepl(email.re3, person)) {
+    data.table(person,
+               person.name=sub(email.re3, "\\1", person),
+               person.email=sub(email.re3, "\\2", person))
+  } else data.table(person, person.name=person, person.email=NA_character_)
 }
 
 #' Strip Non Alpha
@@ -58,67 +55,102 @@ StripNonAlpha <- function(s) {
   gsub("[[:blank:]][[:blank:]]+", " ", s)
 }
 
-#' Git identities
+#' Commits Identities
 #'
-#' List identities from git logs.
+#' Extract different author and committer identities from a set of commits.
 #'
-#' @param git.in Input RDS file.
-#' @return \code{data.table} object with identities with source,
-#'   author key, author field, author name, author email and number of
-#'   commits.
-GitIdentities <- function(git.in) {
-  people.git <- readRDS(git.in)[, list(source, hash, author.key=author)]
+#' @param commits \code{data.table} commit log.
+#' @return \code{data.table} with columns source, repo, key,
+#'   displayname, type, name, email and N (number of commits).
+#' @export
+CommitsIdentities <- function(commits) {
+  ids <- commits[, list(key=c(author, committer)),
+                 by=list(source, repo, hash)]
 
-  people.git[, multi.email := grepl("@.+@", author.key)]
-  people.git[, multi.and := grepl(multi.and.re, author.key)]
-  people.git[, multi.plus := grepl(", plus ", author.key)]
+  ids[, multi.email := grepl("@.+@", key)]
+  ids[, multi.and := grepl(multi.and.re, key)]
+  ids[, multi.plus := grepl(", plus ", key)]
 
-  people.git <- people.git[, list(author=SplitAuthor(author.key),
-                                  N=length(unique(hash))),
-                           by=c("source", "author.key")]
-  people.git[, {
-    parsed <- ExtractEmail(author)
-    list(author.name=parsed$author.name,
-         author.email=parsed$author.email,
-         N=N)
-  }, by=c("source", "author.key", "author")]
+  ids <- ids[, list(displayname=SplitAuthor(key),
+                    N=length(unique(hash))),
+             by=c("source", "repo", "key")]
+  ids[, {
+    with(ExtractEmail(displayname),
+         list(type="commits",
+              name=person.name,
+              email=person.email,
+              N=N))
+  }, by=c("source", "repo", "key", "displayname")]
+}
+
+#' Issues Identities
+#'
+#' Extract different identities from a set of issues.
+#'
+#' @param issues \code{data.table} with issue log.
+#' @return \code{data.table} with columns source, repo, key,
+#'   displayname, type, name, email and N (number of commits).
+#' @export
+IssuesIdentities <- function(issues) {
+  ids <- issues[, list(key=c(reporter.key, creator.key),
+                       name=c(reporter.name, creator.name),
+                       displayname=c(reporter.displayname, creator.displayname),
+                       email=c(reporter.email, creator.email)),
+                by=source]
+  ids <- ids[!is.na(key) | !is.na(name) |
+             !is.na(displayname) | !is.na(email)]
+  ids$type <- "issues"
+  ids$repo <- NA
+  ids[, .N, by=list(type, source, repo, key, name, displayname, email)]
+}
+
+#' Issue Comments Identities
+#'
+#' Extract different identities from a set of issue comments.
+#'
+#' @param comments \code{data.table} with issue comment log.
+#' @return \code{data.table} with columns source, repo, key,
+#'   displayname, type, name, email and N (number of comments).
+#' @export
+IssueCommentsIdentities <- function(comments) {
+  ids <- comments[, list(key=c(update.author.key, author.key),
+                         name=c(update.author.name, author.name),
+                         displayname=c(update.author.displayname,
+                                       author.displayname),
+                         email=c(update.author.email, author.email)),
+                  by=source]
+  ids <- ids[!is.na(key) | !is.na(name) |
+             !is.na(displayname) | !is.na(email)]
+  ids$type <- "issues"
+  ids$repo <- NA
+  ids[, .N, by=list(type, source, repo, key, name, displayname, email)]
 }
 
 #' Identities
 #'
-#' List identities from git, jira and bugzilla logs.
+#' Extract identities from commits, issues and issue comments.
 #'
-#' @param git.in Git input RDS file.
-#' @param bugzilla.in Bugzilla input RDS file.
-#' @param jira.in Jira input RDS file.
-#' @param identities.commits.out Output file for git identities.
-#' @param identities.bugs.out Output file for Jira and Bugzilla identities.
-#' @param identities.out Output file for all identities.
+#' @param commits \code{data.table} with Git commit identities.
+#' @param issues \code{data.table} with issue identities.
+#' @param comments \code{data.table} with issue comment
+#'   identities.
+#' @param file.out Parquet output file.
+#' @return The \code{data.table} of identities if \code{file.out} is
+#'   NULL, or the output filename otherwise.
 #' @export
-Identities <- function(git.in, bugzilla.in, jira.in, identities.commits.out,
-                       identities.bugs.out, identities.out) {
-  people.bugzilla <- readRDS(bugzilla.in)[, .N, by=c("source", "author.email")]
-  people.jira <- readRDS(jira.in)[, .N, by=c("source", "author.key",
-                                             "author.name", "author.dname",
-                                             "author.email")]
-  people.git <- GitIdentities(git.in)
-
-  people.jira[, author := author.dname]
-  people.bugzilla[, author.key := author.email]
-  people.bugzilla[, author := author.email]
-
-  people <- rbind(people.git, people.bugzilla, people.jira, fill=TRUE)
-  people[!grepl("[[:alpha:]]", author.name), author.name := NA_character_]
-  people[is.na(author.dname), author.dname := author.name]
-  people[, author.name := StripNonAlpha(tolower(author.name))]
-  people[, author.dname := StripNonAlpha(tolower(author.dname))]
-  people[, author.email := StripNonAlpha(tolower(author.email))]
+Identities <- function(commits, issues, comments, file.out=NULL) {
+  people <- rbind(commits, issues, comments, fill=TRUE)
+  people[!grepl("[[:alpha:]]", name), name := NA_character_]
+  people[is.na(displayname), displayname := name]
+  people[, name := StripNonAlpha(tolower(name))]
+  people[, displayname := StripNonAlpha(tolower(displayname))]
+  people[, email := StripNonAlpha(tolower(email))]
+  ## people[is.na(key), key := email] ## TODO Remove after re-processing
   people[, id := 1:.N]
-
-  fwrite(people[grepl("VCS", source)], identities.commits.out)
-  fwrite(people[!grepl("VCS", source)], identities.bugs.out)
-  fwrite(people, identities.out)
-  invisible(NULL)
+  if (!is.null(file.out)) {
+    WriteParquet(people, file.out)
+  }
+  people
 }
 
 #' Parse Apache Email
@@ -158,34 +190,49 @@ MergeByName <- function(people) {
                 "anusha", "sandeep", "philip", "edward", "gilles",
                 "vincent", "elliott", "pradeep", "poorna", "nirmal",
                 "gnodet", "fengyu", "niclas", "sethah", "johann",
-                "philippe")
+                "philippe", "david smith", "john doe", "paul smith",
+                "steve smith", "john smith", "mike smith",
+                "chris smith", "chris jones", "real name",
+                "please ignore this troll (account disabled",
+                "deleted user", "john lee", "michael smith")
 
-  by.name <- people[!is.na(author.name) & !author.name %in% toignore]
-  by.name <- by.name[author.name %in% by.name[, .N, by="author.name"][N > 1]$author.name]
-  by.name <- by.name[grepl(" ", author.name) | nchar(author.name) > 5 |
-                     !grepl("^[a-z0-9]+$", author.name)]
-  by.name[, merged.id := min(id), by="author.name"]
+  sub <- c("markt", "rgodfrey", "rfscholte", "olamy", "jgoodyear",
+           "sandy", "cnauroth", "lewismc", "quetwo", "elecharny",
+           "sebb", "oheger", "rmannibucau")
+  people[grep("@.*=.*@", email)]$name
+  people[grepl("@.*=.*@", email) &
+         sub("^.* = (\\w*) = .*$", "\\1", email) %in% sub,
+         name := sub("^.* = (\\w*) = .*$", "\\1", email)]
+  people[grep("@.*=.*@", email)]$name
 
-  by.name <- rbind(rbindlist(lapply(grep("@.*=.*@", people$author.email), function(i) {
-    p <- people[i]
-    name <- sub("^.* = (\\w*) = .*$", "\\1", p$author.email)
-    if (name %in% c("markt", "rgodfrey", "rfscholte", "olamy", "jgoodyear",
-                    "sandy", "cnauroth", "lewismc", "quetwo", "elecharny",
-                    "sebb", "oheger", "rmannibucau")) {
-      mid <- by.name[author.name == p$author.name, min(merged.id, na.rm=TRUE)]
-      res <- people[author.name == name]
-      res[, merged.id := mid]
-      res
-    }
-  })), by.name)
+  by.name <- people[!is.na(name) & !name %in% toignore]
+  sub <- by.name[, if ("commits" %in% type) list(N=.N), by="name"]
+  by.name <- by.name[name %in% sub[N > 1]$name]
+  by.name <- by.name[grepl(" ", name) | nchar(name) > 5 |
+                     !grepl("^[a-z0-9]+$", name)]
+  by.name[, merged.id := min(id), by="name"]
 
   tomerge <- list(c("ramangrover29", "ramangrover29@gmail.com"),
-                  c("maaritlaine", "maarit"),
+                  c("david philip brondsema", "dave brondsema"),
+                  c("semen boikov", "sboikov"),
+                  c("sheng wu", "wu sheng"),
+                  c("vladimir ozerov", "vozerov"),
+                  c("par niclas hedhman", "niclas hedhman"),
+                  c("shao feng shi", "shaofeng shi"),
+                  c("filip maj", "fil maj"),
+                  c("samuel james corbett", "sam corbett"),
+                  c("timothy a. bish", "timothy bish"),
+                  c("nikolas wellnhofer", "nick wellnhofer"),
+                  c("lburgazzoli", "luca burgazzoli"),
+                  c("christian m\u00FCller", "christian mueller"),
+                  c("antonenko alexander", "alexander antonenko"),
+                  c("joey robert bowser", "joe bowser"),
+                  c("xing zhang", "acton393"),
                   c("maxime beauchemin", "ldap/maxime_beauchemin"),
                   c("madhusudancs@gmail.com", "madhusudan.c.s", "madhusudancs"),
                   c("matt_sergeant", "matt sergeant"))
   rbind(rbindlist(lapply(tomerge, function(ids) {
-    res <- people[author.name %in% ids]
+    res <- people[name %in% ids]
     res[, merged.id := min(id)]
     res
   })), by.name)
@@ -200,12 +247,13 @@ MergeByName <- function(people) {
 MergeByEmail <- function(people) {
   toignore <-c("", "none@none", "dev-null@apache.org", "bugzilla",
                "you@example.com", "unknown", "noreplay@example.com",
-               "disabled@apache.org", "notifications@github.com",
-               "unknown@apache.org")
+               "noreply@example.com", "disabled@apache.org",
+               "notifications@github.com", "unknown@apache.org",
+               "noreply@github.com")
 
-  by.email <- people[!author.email %in% toignore & !is.na(author.email)]
-  by.email <- by.email[author.email %in% by.email[, .N, by="author.email"][N > 1]$author.email]
-  by.email[, merged.id := min(id), by="author.email"]
+  by.email <- people[!email %in% toignore & !is.na(email)]
+  by.email <- by.email[email %in% by.email[, .N, by="email"][N > 1]$email]
+  by.email[, merged.id := min(id), by="email"]
 
   tomerge <- list(c("ramangrover29@123451ca-8445-de46-9d55-352943316053",
                     "ramangrover29@gmail.com@eaa15691-b419-025a-1212-ee371bd00084",
@@ -227,14 +275,22 @@ MergeByEmail <- function(people) {
                   c("jeff@jbalogh.me", "mozilla@jbalogh.me"),
                   c("tbsaunde@tbsaunde.org", "tbsaunde+mozbugs@tbsaunde.org"),
                   c("jwalden+bmo@mit.edu", "jwalden+fxhelp@mit.edu", "jwalden@mit.edu"),
-                  ## c("terrence.d.cole@gmail.com", "tcole@mozilla.com"), ## Not sure
                   c("bugzillamozillaorg_serge_20140323@gautherie.fr", "sgautherie@free.fr"),
                   c("maxime.beauchemin@airbnb.com", "maximebeauchemin@gmail.com"),
                   c("liyang.gmt8@gmail.com", "liyang@apache.org"),
                   c("bigosmallm@gmail.com", "bigosmallm@apache.org"),
                   c("stack@duboce.net", "stack@apache.org"),
+                  c("hyatt@netscape.com", "hyatt@mozilla.org"),
+                  c("mscott@netscape.com", "mscott@mozilla.org",
+                    "scott@scott-macgregor.org"),
+                  c("waterson@maubi.net", "waterson@netscape.com"),
+                  c("mkaply@us.ibm.com", "mkaply@mozilla.com"),
+                  c("pinkerton@netscape.com", "mikepinkerton@mac.com"),
+                  c("blakeross@telocity.com", "bugzilla@blakeross.com"),
+                  c("bienvenu@netscape.com", "bienvenu@nventure.com"),
                   c("ajs6f@virginia.edu", "ajs6f@apache.org"),
-                  c("tnine@apigee.com", "toddnine@apache.org", "todd.nine@gmail.com"),
+                  c("tnine@apigee.com", "toddnine@apache.org",
+                    "todd.nine@gmail.com"),
                   c("tedyu@apache.org", "yuzhihong@gmail.com"),
                   c("peihe@google.com", "pei@apache.org"),
                   c("stephan.ewen@tu-berlin.de", "sewen@apache.org"),
@@ -246,7 +302,9 @@ MergeByEmail <- function(people) {
                   c("harbs@in-tools.com", "harbs@apache.org"),
                   c("u.celebi@fu-berlin.de", "uce@apache.org"),
                   c("mjsax@informatik.hu-berlin.de", "mjsax@apache.org"),
-                  c("jiatuer@163.com", "zhongjian@apache.org", "jiazhong@apache.org", "jiazhong@ebay.com", "hellowowde110@gmail.com"),
+                  c("jiatuer@163.com", "zhongjian@apache.org",
+                    "jiazhong@apache.org", "jiazhong@ebay.com",
+                    "hellowowde110@gmail.com"),
                   c("vivekb.balakrishnan@gmail.com", "vivekb.balakrishnan"),
                   c("ziliu@linkedin.com", "ziyang.liu@asu.edu"),
                   c("andreas@continuuity.com", "anew@apache.org"),
@@ -261,11 +319,54 @@ MergeByEmail <- function(people) {
                   c("vincent.poon@salesforce.com", "vincentpoon@gmail.com"),
                   c("zhfengyu@corp.netease.com", "gzfengyu@corp.netease.com"),
                   c("poorna@cask.co", "poorna@apache.org"),
+                  c("sfraser_bugs@smfr.org", "sfraser@netscape.com"),
+                  c("mcafee@netscape.com", "mcafee@gmail.com"),
+                  c("wtc@netscape.com", "wtc@google.com", "wtchang@redhat.com"),
+                  c("mozilla@noorenberghe.ca", "mozilla@noorenberghe.ca"),
+                  c("wjohnston@mozilla.org", "wjohnston2000@gmail.com"),
+                  c("terrence@mozilla.com", "terrence.d.cole@gmail.com"),
+                  c("cbiesinger@web.de", "cbiesinger@gmail.com", "cbiesinger@gmx.at"),
+                  c("roc+@cs.cmu.edu", "roc@ocallahan.org"),
+                  c("jones.chris.g@gmail.com", "cjones.bugs@gmail.com", "jones.chris.g@gmail.com"),
+                  c("dougt@netscape.com", "dougt@dougt.org"),
+                  c("seth@mozilla.com", "seth.bugzilla@blackhail.net"),
+                  c("blassey@mozilla.com", "lassey@chromium.org", "brad@lassey.us"),
+                  c("warren@netscape.com", "warrensomebody@gmail.com"),
+                  c("rjc@netscape.com", "mozilla@rjcdb.com"),
+                  c("cmanske@netscape.com", "cmanske@jivamedia.com"),
+                  c("dbaron@fas.harvard.edu", "dbaron@dbaron.org"),
+                  c("mwu@mozilla.com", "mwu.code@gmail.com"),
+                  c("bryner@brianryner.com", "bryner@netscape.com",
+                    "bryner@gmail.com", "bryner@uiuc.edu"),
+                  c("briano@netscape.com", "briano@bluemartini.com"),
+                  c("brade@netscape.com", "brade@comcast.net"),
+                  c("darin@meer.net", "darin@netscape.com", "darin.moz@gmail.com"),
                   c("seth.hendrickson16@gmail.com", "shendrickson@cloudera.com"),
-                  c("isuruh@wso2.com", "isuruh@apache.org"))
+                  c("isuruh@wso2.com", "isuruh@apache.org"),
+                  c("archaeopteryx@coole-files.de",
+                    "aryx.bugmail@gmx-topmail.de"),
+                  c("kats@mozilla.com", "bugmail@mozilla.staktrace.com"),
+                  c("jst@mozilla.org", "jstenback+bmo@gmail.com",
+                    "jst@mozilla.jstenback.com", "jst@jstenback.com"),
+                  c("tyler.downer@gmail.com",
+                    "tyler@christianlink.us", "tdowner@mozilla.com"),
+                  c("mkanat@kerio.com", "mkanat@bugzilla.org"),
+                  c("jlong@mozilla.com", "longster@gmail.com"),
+                  c("kartikgupta0909@gmail.com", "kgupta@mozilla.com"),
+                  c("n.nethercote@gmail.com", "nnethercote@mozilla.com"),
+                  c("gijskruitbosch@gmail.com", "gijskruitbosch+bugs@gmail.com"),
+                  c("dao@mozilla.com", "dao+bmo@mozilla.com"),
+                  c("neil@parkwaycc.co.uk", "neil@httl.net"),
+                  c("dholbert@cs.stanford.edu", "dholbert@mozilla.com"),
+                  c("sspitzer@netscape.com", "sspitzer@mozilla.org", "seth@sspitzer.org"),
+                  c("mwoodrow@mozilla.com", "matt.woodrow@gmail.com"),
+                  c("maglione.k@gmail.com", "kmaglione+bmo@mozilla.com"),
+                  c("alecf@netscape.com", "alecf@flett.org"),
+                  c("bugzilla@standard8.plus.com", "standard8@mozilla.com"),
+                  c("olli.pettay@helsinki.fi", "bugs@pettay.fi"))
 
   rbind(rbindlist(lapply(tomerge, function(ids) {
-    res <- people[author.email %in% ids]
+    res <- people[email %in% ids]
     res[, merged.id := min(id)]
     res
   })), by.email)
@@ -286,47 +387,73 @@ BuildMergingGraph <- function(people, merging) {
   g + edges(t(merging))
 }
 
+#' Find bots
+#'
+#' Find bots in list of merged identities.
+#'
+#' @param identities List of merged identities.
+#' @return The log with an added boolean column is.bot.
+FindBots <- function(identities) {
+  bots <- list(emails=c("intermittent-bug-filer@mozilla.bugs",
+                        "pulsebot@bots.tld",
+                        "tbplbot@gmail.com",
+                        "orangefactor@bots.tld",
+                        "wptsync@mozilla.bugs",
+                        "wptsync@mozilla.com",
+                        "release-mgmt-account-bot@mozilla.tld",
+                        "bug-husbandry-bot@mozilla.bugs",
+                        "release+b2gbumper@mozilla.com",
+                        "release+gaiajson@mozilla.com",
+                        "release+l10nbumper@mozilla.com",
+                        "release+treescript@mozilla.org",
+                        "builds@apache.org",
+                        "mxnet-ci",
+                        "impala-public-jenkins@cloudera.com",
+                        "bugzilla@gtalbot.org"),
+               names=c("no author", "github"))
+  bots <- identities[email %in% bots$emails | name %in% bots$names,
+                     unique(merged.id)]
+  identities[, is.bot := merged.id %in% bots]
+  identities
+}
+
 #' Identity merging
 #'
-#' Make identity merging.
+#' Makes identity merging.
 #'
-#' @param identities.in Input RDS file of identities.
-#' @param idmerging.out Output RDS file of identity merging.
+#' @param people \code{data.table} with identities to merge.
+#' @param file.out Output Parquet file.
+#' @return Identity merging \code{data.table} object.
 #' @export
-IdentityMerging <- function(identities.in, idmerging.out) {
-  people <- read.csv(identities.in, stringsAsFactors=FALSE)
-  people <- as.data.table(people)
+IdentityMerging <- function(people, file.out=NULL) {
+  people <- copy(people)
+  people[, email := gsub("%", "@", email)]
+  people[, email.domain := sub("^.*@", "", email)]
 
-  ## Apache fix
-  people[source == "Apache", author.email := ParseApacheEmail(author.email)]
-  people[grepl(" ", author.dname), author.name := author.dname]
-  people[, author.email.domain := sub("^.*@", "", author.email)]
+  people[source == "apache", email := ParseApacheEmail(email)]
+  people[source == "apache" & type == "issues" & grepl(" ", displayname), name := displayname]
+  people[grepl("@formerly-netscape.com.tld$", email),
+         email := sub("@formerly-netscape.com.tld$", "@netscape.com", email)]
+  people[is.na(email) & grepl("^[^@<> ]+@[^@<> ]+$", key), email := key]
 
   by.name <- MergeByName(people)
   by.email <- MergeByEmail(people)
+  by.key <- people[is.na(repo),
+                   if (.N > 1) list(id=id, merged.id=min(id)),
+                   by=list(source, key)]
 
-  merging <- rbind(by.email[, list(id, merged.id)], by.name[, list(id, merged.id)])
+  merging <- rbind(by.email[, list(id, merged.id)],
+                   by.name[, list(id, merged.id)],
+                   by.key[, list(id, merged.id)])
   g <- BuildMergingGraph(people, merging)
 
   people[, merged.id := as.integer(clusters(g)$membership)]
   people[, merged.id := min(id), by="merged.id"]
+  people <- FindBots(people)
 
-  fwrite(people, idmerging.out)
-  invisible(NULL)
-}
+  if (!is.null(file.out)) {
+    WriteParquet(people, file.out)
+  }
 
-#' Mozilla developers
-#'
-#' Add identity merging to mozilla developers.
-#'
-#' @param idmerging.in Input RDS file of identity merging.
-#' @param mozdev.in Input CSV file of mozilla developers.
-#' @return Mozilla developers with merged.id.
-#' @export
-MozillaDevelopers <- function(idmerging.in, mozdev.in) {
-  idmerging <- fread(idmerging.in)
-  mozdev <- fread(mozdev.in)
-  mozdev$merged.id <- NULL
-  merge(unique(idmerging[, list(author.email, merged.id)]),
-        mozdev, by="author.email")
+  people
 }
