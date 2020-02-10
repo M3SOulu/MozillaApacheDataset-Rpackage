@@ -1,12 +1,13 @@
 Package: MozillaApacheDataset
 Title: Mozilla & Apache data processing
-Version: 0.1
+Version: 2020.0.0
 Authors@R: person("Maëlick", "Claes", email = "maelick.claes@oulu.fi", role = c("aut", "cre"))
 Description: Data processing functions for generating the 20MAD
              dataset (20 years of Apache and Mozilla Development).
 Depends: R (>= 3.4.0), data.table, drake
 Imports: tidyr, lubridate, NLoN, logging, stringr, parallel, igraph,
-         AutoTimeNLP, openNLP, NLP, arrow, jsonlite, magrittr
+         arrow, jsonlite, magrittr, RSentiStrength, RSenti4SD,
+         EmoticonFindeR, tokenizers
 Suggests: R.utils
 License: GPL-3
 Encoding: UTF-8
