@@ -1,157 +1,87 @@
-#' Aggregate Git
+#' Aggregate
 #'
-#' Aggregate Git raw data files.
+#' Aggregate several Parquet tables as a single one.
 #'
-#' @param log.in List of git log input files (as a gzipped CSV).
-#' @param diff.in List of git diff input files (as a gzipped CSV).
-#' @param file.out Output RDS file.
+#' @param input.files List of Parquet files.
+#' @param FUNC Function to apply on each Parquet table.
+#' @param cols Columns to subset.
+#' @param file.out Output Parquet filename.
+#' @return The aggregated Parquet tables as a \code{data.table} if
+#'   \code{file.out} is not NULL, otherwise \code{file.out}.
 #' @export
-AggregateGit <- function(log.in, diff.in, file.out)  {
-  ## Reading both Git logs and diffs. Only keep diffs with numeric
-  ## added/removed lines (i.e. get rid of binary files). Aggregate diff
-  ## by file types.
-  log <- rbindlist(mapply(function(f.log, f.diff) {
-    logging::loginfo("Reading git log %s", f.log)
-    log <- ReadFile(f.log)
-    diff <- ReadFile(f.diff)
-    diff[, added := as.numeric(added)]
-    diff[, removed := as.numeric(removed)]
-    diff <- diff[!is.na(added), list(added=sum(added), removed=sum(removed)),
-                 by=list(project, hash, extension=ParseExtension(file))]
-    setkey(diff, project, hash)
-    setkey(log, project, hash)
-    merge(diff, log, by=c("project", "hash"))
-  }, log.in, diff.in, SIMPLIFY=FALSE))
-
-  ## Add sources (Apache, Taliso, Mozilla)
-  log[, source := "VCS Apache"]
-  log[project == "harja", source := "VCS Taliso"]
-  log[project %in% c("mozilla-unified", "comm-central", "mobile-browser"),
-      source := "VCS Mozilla"]
-
-  ## Reads timezone and parse author times
-  log[, tz := sub("^.*([-+][0-9]+)$", "\\1", date)]
-  log[, time := lubridate::parse_date_time(date, "ab!d!H!M!S!Y!z!")]
-
-  saveRDS(log, file.out)
-  invisible(NULL)
+Aggregate <- function(input.files, FUNC, cols=NULL, file.out=NULL) {
+  log <- rbindlist(lapply(input.files, FUNC), fill=TRUE)
+  if (!is.null(cols)) {
+    log <- log %>% SubsetColumns(cols)
+  }
+  if (!is.null(file.out)) {
+    WriteParquet(log, file.out)
+    file.out
+  } else log
 }
 
-#' Aggregate Jira bugs
+#' Aggregate commits
 #'
-#' Aggregate Jira raw bugs.
+#' Aggregate commits for different repositories as a single table.
 #'
-#' @param bugs.in List of bugs input files (as a gzipped CSV).
-#' @param components.in List of components input files (as a gzipped CSV).
-#' @param file.out Output RDS file.
+#' @param gitlog Data.frame containing for each Git repository the
+#'   Parquet filename of the commit log and the Parquet filename of
+#'   the diff.
+#' @param FUNC Function to apply on each commit table.
+#' @param file.out Output Parquet filename.
+#' @return The aggregated Parquet tables as a \code{data.table} if
+#'   \code{file.out} is not NULL, otherwise \code{file.out}.
 #' @export
-AggregateJiraBugs <- function(bugs.in, components.in, file.out) {
-  bugs <- rbindlist(mapply(function(f.bugs, f.comp) {
-    logging::loginfo("Reading jira bugs for %s", f.bugs)
-    bugs <- ReadFile(f.bugs, FALSE)
-    if (file.exists(f.comp)) {
-      components <- ReadFile(f.comp)
-      setnames(components, "name", "component")
-      if ("description" %in% names(components)) {
-        setnames(components, "description", "component.description")
-      }
-      setkey(components, project, product.key, bug.id)
-      setkey(bugs, project, product.key, bug.id)
-      components[bugs]
-    } else bugs
-  }, bugs.in, components.in, SIMPLIFY=FALSE), fill=TRUE)
-
-  bugs <- bugs[, list(source=project, bug.id, product, component,
-                      component.description, status,
-                      resolution=resolution.name,
-                      resolution.description, severity=priority,
-                      created, summary, description)]
-  saveRDS(bugs, file.out)
-  invisible(NULL)
+AggregateCommits <- function(gitlog, FUNC, file.out=NULL) {
+  files <- with(gitlog, mapply(function(x, y) list(log=x, diff=y),
+                               log, diff, SIMPLIFY=FALSE))
+  Aggregate(files, FUNC, file.out=file.out)
 }
 
-#' Aggregate Jira versions
+issues.cols <- list(issues=c("source", "product", "issue.id", "issue.key",
+                             "created", "updated", "last.resolved",
+                             "summary", "description", "version",
+                             "milestone", "status", "severity",
+                             "priority", "issuetype", "resolution",
+                             "component", "votes", "product.name",
+                             "reporter.key", "reporter.name",
+                             "reporter.displayname", "reporter.email",
+                             "reporter.tz", "creator.key",
+                             "creator.name", "creator.displayname",
+                             "creator.email", "creator.tz",
+                             "assignee.key", "assignee.name",
+                             "assignee.displayname", "assignee.email",
+                             "assignee.tz"),
+                    comments=c("source", "product",
+                               "issue.id", "comment.id", "count",
+                               "author.key", "author.name",
+                               "author.displayname", "author.email",
+                               "author.tz", "creator.email",
+                               "update.author.key",
+                               "update.author.name",
+                               "update.author.displayname",
+                               "update.author.email",
+                               "update.author.tz", "created", "updated"))
+
+#' Aggregate issues
 #'
-#' Aggregate Jira raw versions.
+#' Aggregate issue data as a single table.
 #'
-#' @param files.in List of input files (as a gzipped CSV).
-#' @param file.out Output RDS file.
+#' @param jiralog Data.frame containing all the Jira Parquet
+#'   filenames.
+#' @param bugzillalog Data.frame containing all the Bugzilla Parquet
+#'   filenames
+#' @param t Type of issue log to create (e.g. issue or comment).
+#' @param FUNC Function to apply on each table.
+#' @param file.out Output Parquet filename.
+#' @return The aggregated Parquet tables as a \code{data.table} if
+#'   \code{file.out} is not NULL, otherwise \code{file.out}.
 #' @export
-AggregateJiraVersions <- function(files.in, file.out) {
-  versions <- rbindlist(lapply(files.in, function(f) {
-    logging::loginfo("Reading jira versions for %s", f)
-    ReadFile(f)
-  }), fill=TRUE)
-  setnames(versions, "releaseDate", "release.date")
-
-  saveRDS(versions, file.out)
-  invisible(NULL)
-}
-
-#' Aggregate Jira comments
-#'
-#' Aggregate Jira raw comments.
-#'
-#' @param files.in List of input files (as a gzipped CSV).
-#' @param file.out Output RDS file.
-#' @export
-AggregateJiraComments <- function(files.in, file.out) {
-  comments <- rbindlist(lapply(files.in, function(f) {
-    logging::loginfo("Reading jira comments for %s", f)
-    comments <- ReadFile(f)
-    comments[, list(source=project, bug.id, comment.id=1:.N, created, updated,
-                    author.name, author.email=author.emailAddress,
-                    author.dname=author.displayName, author.key,
-                    tz=author.timeZone)]
-  }))
-
-  comments[, created := format(as.POSIXct(created, "%FT%T", tz="UTC"),
-                               "%F %T", tz="UTC")]
-  comments[, updated := format(as.POSIXct(updated, "%FT%T", tz="UTC"),
-                               "%F %T", tz="UTC")]
-
-  saveRDS(comments, file.out)
-  invisible(NULL)
-}
-
-#' Aggregate Bugzilla bugs
-#'
-#' Aggregate Bugzilla raw bugs.
-#'
-#' @param files.in List of input files (as a gzipped CSV).
-#' @param file.out Output RDS file.
-#' @export
-AggregateBugzillaBugs <- function(files.in, file.out) {
-  bugs <- rbindlist(lapply(files.in, function(f) {
-    logging::loginfo("Reading Mozilla bugs for %s", f)
-    ReadFile(f)
-  }), fill=TRUE)
-  bugs <- bugs[, list(source="Mozilla", bug.id, product, component, status,
-                      resolution, severity, summary)]
-  saveRDS(bugs, file.out)
-  invisible(NULL)
-}
-
-#' Aggregate Bugzilla comments
-#'
-#' Aggregate Bugzilla raw comments.
-#'
-#' @param files.in List of input files (as a gzipped CSV).
-#' @param file.out Output RDS file.
-#' @export
-AggregateBugzillaComments <- function(files.in, file.out) {
-  comments <- rbindlist(lapply(files.in, function(f) {
-    logging::loginfo("Reading Mozilla comments for %s", f)
-    comments <- ReadFile(f, FALSE)
-    comments[, list(source=project, bug.id=id, comment.id=1:.N,
-                    created=creation_time, updated=time,
-                    author.email=author, attachment=attachment_id)]
-  }))
-
-  comments[, created := format(as.POSIXct(created, "%FT%T", tz="UTC"),
-                               "%F %T", tz="UTC")]
-  comments[, updated := format(as.POSIXct(updated, "%FT%T", tz="UTC"),
-                               "%F %T", tz="UTC")]
-  saveRDS(comments, file.out)
-  invisible(NULL)
+AggregateIssues <- function(jiralog, bugzillalog, t,
+                            FUNC, file.out=NULL) {
+  files <- rbind(jiralog, bugzillalog)[type == t, filename]
+  log <- Aggregate(files, function(f) {
+    res <- f %>% ReadParquet
+    if (nrow(res)) res %>% FUNC
+  }, cols=issues.cols[[t]], file.out=file.out)
 }
