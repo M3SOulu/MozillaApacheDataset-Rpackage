@@ -1,315 +1,333 @@
-#' Aggregate Plan
+#' Git Plan
 #'
-#' Make a plan for aggregating raw data.
+#' Returns a drake plan for git repositories
 #'
-#' @param datadir Directory where data is stored.
-#' @return a drake plan.
+#' @param repos Repository \code{data.table} object.
+#' @param datadir Directory where the data is stored.
+#' @return A drake plan tibble.
 #' @export
-AggregatePlan <- function(datadir) {
-  plan <- drake_plan(agg.git=AggregateGit(raw.git.log, raw.git.diff,
-                                          file_out("DATADIR__/raw/git.rds")),
-                     agg.jira.bugs=AggregateJiraBugs(raw.jira.bugs, raw.jira.components,
-                                                     file_out("DATADIR__/raw/jira-bugs.rds")),
-                     agg.jira.versions=AggregateJiraVersions(raw.jira.versions,
-                                                             file_out("DATADIR__/raw/jira-versions.rds")),
-                     agg.jira.comments=AggregateJiraComments(raw.jira.comments,
-                                                             file_out("DATADIR__/raw/jira-comments.rds")),
-                     agg.bz.bugs=AggregateBugzillaBugs(raw.bugzilla.bugs,
-                                                       file_out("DATADIR__/raw/bugzilla-bugs.rds")),
-                     agg.bz.comments=AggregateBugzillaComments(raw.bugzilla.comments,
-                                                               file_out("DATADIR__/raw/bugzilla-comments.rds")))
-  evaluate_plan(plan, list(DATADIR__=datadir), rename=FALSE)
+GitPlan <- function(repos, datadir) {
+  p <- drake_plan
+  input <- File("git", repos, datadir, "raw", ext="json")
+  log.out <- File("git", repos, datadir, "raw", "log")
+  diff.out <- File("git", repos, datadir, "raw", "diff")
+  agg.out <- file.path(datadir, "raw/git.parquet")
+  p(git=target(ParseGitRepository(source, repo, file_in(input),
+                                  file_out(log), file_out(diff)),
+               transform=map(source=!!repos[type == "git", source],
+                             repo=!!repos[type == "git", repo],
+                             sub=!!repos[type == "git", sub],
+                             gzip=!!repos[type == "git", gzip],
+                             input=!!input,
+                             log=!!log.out,
+                             diff=!!diff.out,
+                             .id=c(source, repo))),
+    gitlog=target(Aggregate(list(git), SimplifyGitlog,
+                            file.out=file_out(!!agg.out)),
+                  transform=combine(git)))
 }
 
-#' Identities Plan
+#' Jira Plan
 #'
-#' Make a plan for identity merging.
+#' Returns a drake plan for Jira.
 #'
-#' @param datadir Directory where data is stored.
-#' @return a drake plan.
+#' @param repos Repository \code{data.table} object.
+#' @param datadir Directory where the data is stored.
+#' @return A drake plan tibble.
 #' @export
-IdentitiesPlan <- function(datadir) {
-  plan <- drake_plan(identities=Identities(file_in("DATADIR__/raw/git.rds"),
-                                           file_in("DATADIR__/raw/bugzilla-comments.rds"),
-                                           file_in("DATADIR__/raw/jira-comments.rds"),
-                                           file_out("DATADIR__/identities_commits.csv"),
-                                           file_out("DATADIR__/identities_bugs.csv"),
-                                           file_out("DATADIR__/identities.csv")),
-                     idmerging=IdentityMerging(file_in("DATADIR__/identities.csv"),
-                                               file_out("DATADIR__/identity_merging.csv")),
-                     mozdev=MozillaDevelopers(file_in("DATADIR__/identity_merging.csv"),
-                                              file_in("DATADIR__/mozilla_developers.csv")))
-  evaluate_plan(plan, list(DATADIR__=datadir), rename=FALSE)
+JiraPlan <- function(repos, datadir) {
+  p <- drake_plan
+  input <- File("jira", repos, datadir, "raw", ext="json")
+  files.out <- list(issues="issues", versions="versions",
+                    history="history", comments="comments")
+  files.out <- lapply(files.out,
+                      function(f) File("jira", repos, datadir, "raw", f))
+  p(jira=target(ParseJira(source, repo, file_in(input),
+                          list(issues=file_out(issues.out),
+                               versions=file_out(versions.out),
+                               history=file_out(history.out),
+                               comments=file_out(comments.out))),
+                transform=map(source=!!repos[type == "jira", source],
+                              repo=!!repos[type == "jira", repo],
+                              input=!!input,
+                              issues.out=!!files.out$issues,
+                              versions.out=!!files.out$versions,
+                              history.out=!!files.out$history,
+                              comments.out=!!files.out$comments,
+                              .id=c(source, repo))),
+    jiralog=target(rbindlist(list(jira)), transform=combine(jira)))
 }
 
-#' Log Plan
+#' Bugzila Plan
 #'
-#' Make a plan for making git and bug logs.
+#' Returns a drake plan for Bugzillla.
 #'
-#' @param datadir Directory where data is stored.
-#' @return a drake plan.
+#' @param repos Repository \code{data.table} object.
+#' @param datadir Directory where the data is stored.
+#' @return A drake plan tibble.
 #' @export
-LogPlan <- function(datadir) {
-  plan <- drake_plan(gitlog=GitLog(file_in("DATADIR__/raw/git.rds"),
-                                   file_in("DATADIR__/raw/bugzilla-bugs.rds"),
-                                   file_in("DATADIR__/identity_merging.csv"),
-                                   file_out("DATADIR__/git_filtered.rds")),
-                     buglog=BugLog(file_in("DATADIR__/identity_merging.csv"),
-                                   file_in("DATADIR__/raw/bugzilla-comments.rds"),
-                                   file_in("DATADIR__/raw/bugzilla-bugs.rds"),
-                                   file_in("DATADIR__/raw/jira-comments.rds"),
-                                   file_in("DATADIR__/raw/jira-bugs.rds"),
-                                   file_out("DATADIR__/buglog.rds")),
-                     tz.history=GitTimeZoneHistory(file_in("DATADIR__/git_filtered.rds"),
-                                                   file_out("DATADIR__/git-tz-history.rds")),
-                     buglog2=FilteredBugLog(file_in("DATADIR__/buglog.rds"),
-                                            file_in("DATADIR__/git-tz-history.rds"),
-                                            file_out("DATADIR__/filtered_buglog.rds")),
-                     combined=CombinedLog(file_in("DATADIR__/git_filtered.rds"),
-                                          file_in("DATADIR__/filtered_buglog.rds"),
-                                          file_in("DATADIR__/pos-metrics.rds"),
-                                          file_out("DATADIR__/combined_log.rds")))
-  evaluate_plan(plan, list(DATADIR__=datadir), rename=FALSE)
+BugzillaPlan <- function(repos, datadir) {
+  p <- drake_plan
+  input <- File("bugzilla", repos, datadir, "raw", ext="json")
+  files.out <- list(issues="issues", history="history", comments="comments")
+  files.out <- lapply(files.out,
+                      function(f) File("bugzilla", repos, datadir, "raw", f))
+  p(bugzilla=target(ParseBugzilla(source, repo, file_in(input),
+                                  list(issues=file_out(issues.out),
+                                       history=file_out(history.out),
+                                       comments=file_out(comments.out))),
+                    transform=map(source=!!repos[type == "bugzilla", source],
+                                  repo=!!repos[type == "bugzilla", repo],
+                                  input=!!input,
+                                  issues.out=!!files.out$issues,
+                                  history.out=!!files.out$history,
+                                  comments.out=!!files.out$comments,
+                                  .id=c(source, repo))),
+    bugzillalog=target(rbindlist(list(bugzilla)), transform=combine(bugzilla)))
 }
 
-#' NLP Aggregate Plan
+#' Issue Plan
 #'
-#' Make a plan for aggregating natural language processing of issue comments.
+#' Returns a drake plan for aggregating issue and comment logs.
 #'
-#' @param datadir Directory where data is stored.
-#' @param senti4sd.path Path where Senti4SD jar file is located.
-#' @param senti4sd.chunk.size Maximum number of text element to
-#'   consider for one single run of Senti4SD.
-#' @param senti4sd.memory.limit Maximum amount of memory (in GB) to
-#'   use for one run of Senti4SD. Overrides \code{senti4sd.chunk.size}
-#'   by setting it to \code{500 * senti4sd.memory.limit}.
-#' @return a drake plan.
+#' @param datadir Directory where the data is stored.
+#' @return A drake plan tibble.
 #' @export
-NLPAggregatePlan <- function(datadir, senti4sd.path, senti4sd.chunk.size=1000,
+IssuePlan <- function(datadir) {
+  p <- drake_plan
+  issues.out <- file.path(datadir, "raw/issues.parquet")
+  comments.out <- file.path(datadir, "raw/comments.parquet")
+  p(issuelog=AggregateIssues(jiralog, bugzillalog, "issues", identity,
+                             file_out(!!issues.out)),
+    commentlog=AggregateIssues(jiralog, bugzillalog, "comments", RemoveTextCols,
+                               file_out(!!comments.out)))
+}
+
+#' Models Plan
+#'
+#' Returns a drake plan for NLoN and Senti4SD models.
+#'
+#' @return A drake plan tibble.
+#' @export
+ModelsPlan <- function() {
+  drake_plan(nlon.model=NLoN::DefaultNLoNModel(),
+             senti4sd.model=RSenti4SD::Senti4SDModel())
+}
+
+#' Map Comments Plan
+#'
+#' Returns a drakw plan for applying a function on issue comments.
+#'
+#' @param FUNC Function to apply on comments.
+#' @param target.name Base name to use for the drake targets.
+#' @param input.subdir Subdirectory of the input comments.
+#' @param input.subname File sub name of the input comments.
+#' @param output.subdir Subdirectory of the output comments.
+#' @param output.subname File sub name of the output comments.
+#' @param repos Repository \code{data.table} object.
+#' @param datadir Directory where the data is stored.
+#' @param types Types of issue repository to use.
+#' @return A drake plan tibble.
+MapCommentsPlan <- function(FUNC, target.name,
+                            input.subdir, input.subname,
+                            output.subdir, output.subname,
+                            repos, datadir, types=c("bugzilla", "jira")) {
+  input <- File(types, repos, datadir, input.subdir, input.subname)
+  output <- File(types, repos, datadir, output.subdir, output.subname)
+  p <- drake_plan
+  p <- p(name=target((!!FUNC)(file_in(input), file_out(output)),
+                     transform=map(source=!!repos[type %in% types, source],
+                                   repo=!!repos[type %in% types, repo],
+                                   input=!!input, output=!!output,
+                                   .id=c(source, repo))))
+  p$target <- sub("^name", target.name, p$target)
+  p
+}
+
+#' NLP Plans
+#'
+#' Returns a list of map comments plans to build.
+#'
+#' @return List of lists with names target, input.subdir,
+#'   input.subname and output.subname.
+#' @seealso MapCommentsPlan
+NLPPlans <- function() {
+  nlp.plans <- rbindlist({
+    list(list(target="comments", input.subdir="raw",
+              input.subname="comments", output.subname=""),
+         list(target="nlcomments", input.subdir="nlp",
+              input.subname="", output.subname="nlcomments"),
+         list(target="emoticons", input.subdir="nlp",
+              input.subname="nlcomments"),
+         list(target="sentences", input.subdir="nlp",
+              input.subname="nlcomments"),
+         list(target="sentistrength", input.subdir="nlp",
+              input.subname="sentences"),
+         list(target="senti4sd", input.subdir="nlp",
+              input.subname="sentences"))
+  }, fill=TRUE)
+  nlp.plans[is.na(output.subname), output.subname := target]
+  nlp.plans
+}
+
+#' NLP Plan Functions
+#'
+#' Functions for building comments map plans.
+#'
+#' @param senti4sd.chunk.limit Maximum number of comments to process at the
+#'   same time with Senti4SD.
+#' @param senti4sd.memory.limit Maximum amount of memory (in GB) to use for one
+#'   run of Senti4SD. Overrides \code{senti4sd.chunk.size} by setting
+#'   it to \code{500 * senti4sd.memory.limit}.
+#' @return A list of functions.
+NLPPlanFunctions <- function(senti4sd.chunk.limit=1000,
                              senti4sd.memory.limit=0) {
-  projects <- NLPProjects(datadir)
-  plan <- drake_plan(senti4sd.model=AutoTimeNLP::Senti4SDModel(file_out("SENTI4SD__/modelLiblinear.Rda")),
-                     pos.metrics=POSMetrics(bugpos,
-                                            file_out("DATADIR__/pos-metrics.rds")),
-                     pos=AggregatePOS(bugpos,
-                                      file_in("DATADIR__/filtered_buglog.rds"),
-                                      file_out("DATADIR__/pos.rds")),
-                     noemoticons=CommentsWithoutEmoticons(bugsentences,
-                                                          file_in("DATADIR__/buglog.rds"),
-                                                          file_in("DATADIR__/emoticons.rds"),
-                                                          file_out("DATADIR__/noemoticons.rds")),
-                     noemoticons.sample=SampleComments(file_in("DATADIR__/noemoticons.rds"),
-                                                       file_out("DATADIR__/noemoticons_sample.rds"),
-                                                       senti4sd.model,
-                                                       "SENTI4SD_PATH__",
-                                                       SENTI4SD_CHUNK__,
-                                                       SENTI4SD_MEMORY__,
-                                                       42),
-                     emoticons.agg=AggregateEmoticons(emoticons,
-                                                      file_in("DATADIR__/buglog.rds"),
-                                                      file_out("DATADIR__/emoticons.rds")),
-                     emoticons.senti=EmoticonsSentiment(file_in("DATADIR__/emoticons.rds"),
-                                                        file_out("DATADIR__/emoticons_senti.rds"),
-                                                        senti4sd.model,
-                                                        "SENTI4SD_PATH__",
-                                                        SENTI4SD_CHUNK__,
-                                                        SENTI4SD_MEMORY__),
-                     sentistrength=SentiStrength(bugsentences,
-                                                 file_out("DATADIR__/comments-valence-arousal.rds")))
-  bind_plans(evaluate_plan(plan, list(SENTI4SD__=senti4sd.path,
-                                      SENTI4SD_PATH__=senti4sd.path,
-                                      SENTI4SD_CHUNK__=senti4sd.chunk.size,
-                                      SENTI4SD_MEMORY__=senti4sd.memory.limit,
-                                      DATADIR__=datadir), rename=FALSE),
-             NLPInFiles("raw/bugcomments", "raw.bugcomments", datadir),
-             NLPInFiles("bugcomments", "bugcomments", datadir),
-             NLPInFiles("bugsentences", "bugsentences", datadir),
-             NLPInFiles("bugpos", "bugpos", datadir),
-             NLPInFiles("emoticons", "emoticons", datadir))
+  list(comments=quote(function(fin, fout) {
+    ProcessComments(ProcessRawComments, fin, fout,
+                    nlon.model=nlon.model, chunk.limit=0)
+  }), nlcomments=quote(function(fin, fout) {
+    ProcessComments(NLComments, fin, fout)
+  }), sentences=quote(function(fin, fout) {
+    ProcessComments(SplitSentences, fin, fout)
+  ## }), pos=quote(function(fin, fout) {
+  ##   ProcessComments(POSTagging, fin, fout)
+  }), emoticons=quote(function(fin, fout) {
+    ProcessComments(Emoticons, fin, fout)
+  }), sentistrength=quote(function(fin, fout) {
+    ProcessComments(SentiStrength, fin, fout)
+  }), senti4sd=substitute(function(fin, fout) {
+    ProcessComments(MozillaApacheDataset::Senti4SD, fin, fout,
+                    senti4sd.model, memory.limit, chunk.limit)
+  }, list(path=senti4sd.path, memory.limit=senti4sd.memory.limit,
+          chunk.limit=senti4sd.chunk.limit)))
 }
 
 #' NLP Plan
 #'
-#' Make a plan for natural langiage processing of issue comments.
+#' Returns a drake plan for NLP of issue comments.
 #'
-#' @param datadir Directory where data is stored.
-#' @return a drake plan.
+#' @param repos Repository \code{data.table} object.
+#' @param datadir Directory where the data is stored.
+#' @param senti4sd.chunk.limit Maximum number of comments to process at the
+#'   same time with Senti4SD.
+#' @param senti4sd.memory.limit Maximum amount of memory (in GB) to use for one
+#'   run of Senti4SD. Overrides \code{senti4sd.chunk.size} by setting
+#'   it to \code{500 * senti4sd.memory.limit}.
+#' @param types Types of issue repository to use.
+#' @return A drake plan tibble.
 #' @export
-NLPPlan <- function(datadir) {
-  projects <- NLPProjects(datadir)
-  plans <- list({
-    plan <- drake_plan(process.nlon=ProcessNLoN(file_in("DATADIR__/raw/jira/comments-PRJ__.csv.gz"),
-                                                file_out("DATADIR__/raw/bugcomments/PRJ__.rds"),
-                                                "jira", nlon.model))
-    evaluate_plan(plan, list(PRJ__=projects[source == "jira", project]))
-  }, {
-    plan <- drake_plan(process.nlon=ProcessNLoN(file_in("DATADIR__/raw/bugzilla/comments-PRJ__.csv.gz"),
-                                                file_out("DATADIR__/raw/bugcomments/PRJ__.rds"),
-                                                "bugzilla", nlon.model))
-    evaluate_plan(plan, list(PRJ__=projects[source == "bugzilla", project]))
-  }, {
-    plan <- drake_plan(nlcomments=ProcessComments(file_in("DATADIR__/raw/bugcomments/PRJ__.rds"),
-                                                  file_out("DATADIR__/bugcomments/PRJ__.rds"),
-                                                  NaturalLanguageComments))
-    evaluate_plan(plan, list(PRJ__=projects$project))
-  }, {
-    plan <- drake_plan(sentences=ProcessComments(file_in("DATADIR__/bugcomments/PRJ__.rds"),
-                                                 file_out("DATADIR__/bugsentences/PRJ__.rds"),
-                                                 SplitSentences))
-    evaluate_plan(plan, list(PRJ__=projects$project))
-  }, {
-    plan <- drake_plan(run.pos=ProcessComments(file_in("DATADIR__/bugcomments/PRJ__.rds"),
-                                               file_out("DATADIR__/bugpos/PRJ__.rds"),
-                                               POSTagging))
-    evaluate_plan(plan, list(PRJ__=projects$project))
-  }, {
-    plan <- drake_plan(find.emoticons=ProcessComments(file_in("DATADIR__/bugcomments/PRJ__.rds"),
-                                                      file_out("DATADIR__/emoticons/PRJ__.rds"),
-                                                      Emoticons))
-    evaluate_plan(plan, list(PRJ__=projects$project))
-  })
-  bind_plans(evaluate_plan(do.call(bind_plans, plans),
-                           list(DATADIR__=datadir), rename=FALSE),
-             drake_plan(nlon.model=MakeNLoNModel()))
+NLPPlan <- function(repos, datadir, senti4sd.chunk.limit=1000,
+                    senti4sd.memory.limit=0, types=c("bugzilla", "jira")) {
+  Functions <- NLPPlanFunctions(senti4sd.chunk.limit,
+                                senti4sd.memory.limit)
+  with(NLPPlans(), bind_plans({
+    mapply(function(FUNC, target, input.subdir, input.subname, output.subname) {
+      MapCommentsPlan(FUNC, target, input.subdir, input.subname,
+                      "nlp", output.subname, repos, datadir, types)
+    }, Functions[target], target, input.subdir, input.subname, output.subname,
+    SIMPLIFY=FALSE)
+  }))
 }
 
-#' List projects
+#' NLP Aggregate Plan
 #'
-#' List projects of a specific type in specific folder.
+#' Returns a drake plan for aggregating NLP plans.
 #'
-#' @param src Source of the projects (jira or bugzilla).
-#' @param type Type of data (e.g. comments or bugs).
-#' @param datadir Directory where data is stored.
-#'
-#' @return List of project names.
-ListProjects <- function(src, type, datadir) {
-  path <- file.path(datadir, "raw", src)
-  file.re <- sprintf("^%s-(.+)\\.csv\\.gz$", type)
-  sub(file.re, "\\1", dir(path, pattern=file.re))
-}
-
-#' NLP projects
-#'
-#' List Jira and Bugzilla projects with comments.
-#'
-#' @param datadir Directory where data is stored.
-#' @return List of project names
+#' @param repos Repository \code{data.table} object.
+#' @param datadir Directory where the data is stored.
+#' @param target Name of the target.
+#' @param types Types of issue repository to use.
+#' @return A drake plan tibble.
 #' @export
-NLPProjects <- function(datadir) {
-  rbind(data.table(source="jira", project=ListProjects("jira", "comments", datadir)),
-        data.table(source="bugzilla", project=ListProjects("bugzilla", "comments", datadir)))
+NLPAggregatePlan <- function(repos, datadir, target,
+                             types=c("bugzilla", "jira")) {
+  files.in <- File(types, repos, datadir, "nlp", target)
+  file.out <- file.path(datadir, sprintf("nlp/%s.parquet", target))
+  FUNC <- function(f) {
+    res <- ReadParquet(f)
+    if (ncol(res) > 2) res
+  }
+  p <- drake_plan(target=Aggregate(file_in(!!files.in), !!FUNC,
+                                   file.out=file_out(!!file.out)))
+  p$target <- target
+  p
 }
 
-#' Raw Plans
+#' Identity Merging Plan
 #'
-#' Make a plan for raw data files.
+#' Returns a drake plan for identity merging
 #'
-#' @param src Source of the projects (jira or bugzilla).
-#' @param type Type of data (e.g. comments or bugs).
-#' @param datadir Directory where data is stored.
-#' @return a drake plan.
+#' @param datadir Directory where the data is stored.
+#' @return A drake plan tibble.
 #' @export
-RawPlan <- function(src, type, datadir) {
-  projects <- ListProjects(src, type, datadir)
-  plan <- drake_plan(raw=file_in("DATADIR__/raw/SRC__/TYPE__-PRJ__.csv.gz"))
-  plan <- evaluate_plan(plan, list(DATADIR__=datadir), rename=FALSE)
-  plan <- evaluate_plan(plan, list(SRC__=src, TYPE__=type, PRJ__=projects))
-  gather_plan(plan, sprintf("raw.%s.%s", src, type), append=TRUE)
+IdentityMergingPlan <- function(datadir) {
+  ids.out <- file.path(datadir, "identities.parquet")
+  merging.out <- file.path(datadir, "idmerging.parquet")
+  File <- function(f) file.path(datadir, "raw", sprintf("%s.parquet", f))
+  drake_plan(identities.issues=IssuesIdentities(ReadParquet(file_in(!!File("issues")))),
+             identities.comments=IssueCommentsIdentities(ReadParquet(file_in(!!File("comments")))),
+             identities.commits=CommitsIdentities(ReadParquet(file_in(!!File("git")))),
+             identities=Identities(identities.commits,
+                                   identities.issues,
+                                   identities.comments,
+                                   file_out(!!ids.out)),
+             idmerging=IdentityMerging(identities, file_out(!!merging.out)))
 }
 
-#' NLP input files
+#' Log Plan
 #'
-#' List NLP input files as a plan.
+#' Returns a drake plan for the different final log files
 #'
-#' @param root.dir Root directory.
-#' @param target the target name in the plan.
-#' @param datadir Directory where data is stored.
-#' @return A drake plan.
-NLPInFiles <- function(root.dir, target, datadir) {
-  projects <- NLPProjects(datadir)
-  plan <- drake_plan(raw=file_in("DIR__/PRJ__.rds"))
-  plan <- evaluate_plan(plan, list(DIR__=file.path(datadir, root.dir),
-                                   PRJ__=projects$project))
-  gather_plan(plan, target, append=TRUE)
-}
-
-## NLPOutFiles <- function(root.dir, datadir, CMD="list(%s)") {
-##   files <- file.path(datadir, root.dir, sprintf("%s.rds", NLPProjects(datadir)$project))
-##   files <- sprintf("file_out(\"%s\")", files)
-##   sprintf(CMD, paste(files, collapse=", "))
-## }
-
-#' Raw Plans
-#'
-#' Make a plan for raw data files.
-#'
-#' @param datadir Directory where data is stored.
-#' @return a drake plan.
+#' @param datadir Directory where the data is stored.
+#' @return A drake plan tibble.
 #' @export
-RawPlans <- function(datadir) {
-  bind_plans(RawPlan("bugzilla", "bugs", datadir),
-             RawPlan("bugzilla", "comments", datadir),
-             RawPlan("jira", "bugs", datadir),
-             RawPlan("jira", "components", datadir),
-             RawPlan("jira", "versions", datadir),
-             RawPlan("jira", "comments", datadir),
-             RawPlan("git", "log", datadir),
-             RawPlan("git", "diff", datadir),
-             drake_plan(raw.nlp=c(raw.bugzilla.comments, raw.jira.comments)))
-}
-
-#' RDS to Parquet
-#'
-#' Convert RDS data.frame to Apache Parquet file.
-#'
-#' @param file.in Input file stored in RDS.
-#' @param file.out Output Parquet file.
-#' @param compression Compression to use for Parquet file.
-#' @export
-RDSToParquet <- function(file.in, file.out, compression=NULL) {
-  table <- readRDS(file.in)
-  arrow::write_parquet(table, file.out, compression)
-}
-
-#' Parquet Plan
-#'
-#' Make a plan for converting RDS files to Parquet
-#'
-#' @param datadir Directory where data is stored.
-#' @return a drake plan.
-#' @export
-ParquetPlan <- function(datadir) {
-  names <- c("buglog", "combined_log", "git_filtered", "git-tz-history",
-             "filtered_buglog", "comments-valence-arousal",
-             "emoticons", "emoticons.senti",
-             "noemoticons", "noemoticons_sample",
-             "pos-metrics", "pos")
-  plan <- drake_plan(rds2parquet=RDSToParquet(file_in("DATADIR__/NAME__.rds"),
-                                              file_out("DATADIR__/NAME__.parquet")))
-  evaluate_plan(plan, list(DATADIR__=datadir, NAME__=names))
+LogPlan <- function(datadir) {
+  raw.git <- file.path(datadir, "raw/git.parquet")
+  commits <- file.path(datadir, "commits.parquet")
+  raw.issues <- file.path(datadir, "raw/issues.parquet")
+  raw.comments <- file.path(datadir, "raw/comments.parquet")
+  idmerging <- file.path(datadir, "idmerging.parquet")
+  tzhistory <- file.path(datadir, "tzhistory.parquet")
+  timestamps <- file.path(datadir, "timestamps.parquet")
+  drake_plan(commits=CommitLog(file_in(!!raw.git),
+                               file_in(!!raw.issues),
+                               file_out(!!commits)),
+             tzhistory=CommitTimeZoneHistory(file_in(!!commits),
+                                             file_in(!!idmerging),
+                                             file_out(!!tzhistory)),
+             timestamps=Timestamps(file_in(!!commits),
+                                   file_in(!!raw.issues),
+                                   file_in(!!raw.comments),
+                                   file_in(!!idmerging),
+                                   file_in(!!tzhistory),
+                                   file_out(!!timestamps)))
 }
 
 #' Full Plan
 #'
-#' Make the full plan.
+#' Returns the full drake plan.
 #'
-#' @param datadir Directory where data is stored.
-#' @param senti4sd.path Path where Senti4SD jar file is located.
-#' @param senti4sd.chunk.size Maximum number of text element to
-#'   consider for one single run of Senti4SD.
-#' @param senti4sd.memory.limit Maximum amount of memory (in GB) to
-#'   use for one run of Senti4SD. Overrides \code{senti4sd.chunk.size}
-#'   by setting it to \code{500 * senti4sd.memory.limit}.
-#' @return a drake plan.
+#' @param datadir Directory where the data is stored.
+#' @param senti4sd.chunk.limit Maximum number of comments to process at the
+#'   same time with Senti4SD.
+#' @param senti4sd.memory.limit Maximum amount of memory (in GB) to use for one
+#'   run of Senti4SD. Overrides \code{senti4sd.chunk.size} by setting
+#'   it to \code{500 * senti4sd.memory.limit}.
+#' @return A drake plan tibble.
 #' @export
-FullPlan <- function(datadir, senti4sd.path,
-                     senti4sd.chunk.size=1000, senti4sd.memory.limit=0) {
-  bind_plans(RawPlans(datadir),
-             AggregatePlan(datadir),
-             IdentitiesPlan(datadir),
+FullPlan <- function(datadir, senti4sd.chunk.limit=1000,
+                     senti4sd.memory.limit=0) {
+  repos <- RawData(datadir)
+  bind_plans(GitPlan(repos, datadir),
+             JiraPlan(repos, datadir),
+             BugzillaPlan(repos, datadir),
+             IssuePlan(datadir),
+             ModelsPlan(),
+             IdentityMergingPlan(datadir),
              LogPlan(datadir),
-             NLPPlan(datadir),
-             NLPAggregatePlan(datadir, senti4sd.path,
-                              senti4sd.chunk.size, senti4sd.memory.limit),
-             ParquetPlan(datadir))
+             NLPPlan(repos, datadir, senti4sd.chunk.limit,
+                     senti4sd.memory.limit),
+             NLPAggregatePlan(repos, datadir, "sentistrength"),
+             NLPAggregatePlan(repos, datadir, "senti4sd"),
+             NLPAggregatePlan(repos, datadir, "emoticons"))
 }
