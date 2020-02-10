@@ -1,179 +1,94 @@
-#' Fix Git Log
+#' First Time
 #'
-#' Fix Apache Git logs by filtering out commits with no timezone.
+#' Returns first timestamp with valid Git timezone (first timestamp
+#' from 2007 and beyond that is not UTC timezone).
 #'
-#' @param log The git log.
-#' @return The log with commits filtered out.
-FixGitLog <- function(log) {
-  ## First commit time and first commit time with tz not UTC
-  first <- log[, {
-    first.tz <- min(time[tz != "+0000" & tz != "UTC"])
-    first <- min(time)
-    list(ncommits=.N, ncommits2=sum(time < first.tz),
-         nauthors=length(unique(author[time < first.tz])),
-         diff=as.numeric(difftime(first.tz, first, units="days")),
-         first=first, first.tz=first.tz)
-  }, by="project"]
-  log <- merge(log, first[, list(project, first.tz, first)], by="project")
-  log <- log[source != "VCS Apache" | first == first.tz | time >= first.tz]
-  log <- log[project != "hive" | time >= as.POSIXct("2015-04-22")]
-  log$first <- NULL
-  log$first.tz <- NULL
-  log
+#' @param time Vector of timestamps.
+#' @param tz Vector of timezones.
+#' @return A POSIXct object.
+FirstTime <- function(time, tz) {
+  min(time[tz != "+0000" & year(time) >= 2007])
 }
 
-#' Find bots
+#' Commit TimeZone Accuracy
 #'
-#' Find bots in gitlog based on email address.
+#' Adds boolean columns (from.svn and accurate.tz) to a data.table of
+#' commits for determining which commits have accurate timezones.
 #'
-#' @param log The git log.
-#' @return The log with a boolean bot column.
-FindBots <- function(log) {
-  bots <- c("bugzilla@gtalbot.org",
-            "release-mgmt-account-bot@mozilla.tld", "orangefactor@bots.tld",
-            "pulsebot@bots.tld", "tbplbot@gmail.com",
-            "release\\+b2gbumper@mozilla.com",
-            "release\\+gaiajson@mozilla.com", "release\\+l10nbumper@mozilla.com")
-  log[, bot := grepl(paste(bots, collapse="|"), author, ignore.case=TRUE)]
-  log
+#' @param log Commit log as a data.table object.
+#' @return The modified commit log with added from.svn and accurate.tz
+#'   columns.
+CommitTimeZoneAccuracy <- function(log) {
+  logging::loginfo("Computing commit timezone accuracy")
+  gitsvn.re <- "git-svn-id: https?://[^ ]+ [-a-f0-9]+(\n\nFormer-commit-id: [-a-f0-9]+)?$"
+  log[, from.svn := grepl(gitsvn.re, message)]
+  log[, accurate.tz := (!from.svn &
+                        author.time >= FirstTime(author.time, author.tz) &
+                        commit.time >= FirstTime(commit.time, commit.tz)),
+      by=list(source, repo)]
 }
 
-## TODO
-## Apache: "cvs2svn", "svn-role"
-## Need to grep because different ones: jenkins
-
-#' Parse bug id
+#' Parse Mozilla Issue Id
 #'
-#' Parses Mozilla bug ids from log messages.
+#' Parses issue ids from Mozilla commit log messages.
 #'
-#' @param log.message Log messages.
-#' @return Bug ids parsed from log messages.
-ParseBugId <- function(log.message) {
-  bug.id.re <- "^(.*(bug |bg |b=)#?)?[^[:alnum:]]*(\\d+).*$"
-  as.numeric(sub(bug.id.re, "\\3", log.message, ignore.case=TRUE))
+#' @param log.message Vector of commit log messages.
+#' @return Vecotr of issue id integers (with possible NAs).
+ParseMozillaIssueId <- function(log.message) {
+  logging::loginfo("Parsing Mozilla issue ids from commit messages.")
+  issue.id.re <- "^(.*(bug |bg |b=)#?)?[^[:alnum:]]*(\\d+).*$"
+  as.numeric(sub(issue.id.re, "\\3", log.message, ignore.case=TRUE))
 }
 
-#' Git log
+#' Parse Apache Issue Key
 #'
-#' Makes git log with fixes and identity merging.
+#' Parses issue keys from Apache commit log messages.
 #'
-#' @param git.in Git RDS input.
-#' @param bugzilla.in Bugzilla RDS input.
-#' @param idmerging.in Identity merging RDS input.
-#' @param git.out RDS output file.
+#' @param log.message Vector of commit log messages.
+#' @return A vector where each element is a string of issue keys
+#'   separated by spaces.
+ParseApacheIssueKey <- function(log.message) {
+  logging::loginfo("Parsing Apache issue keys from commit messages.")
+  issue.id.re <- "^(([^-[:alnum:]]*[A-Z0-9]+-[0-9]+[^-[:alnum:]])+).*$"
+  res <- sub(issue.id.re, "\\1", log.message)
+  res[!grepl(issue.id.re, log.message)] <- NA
+  sapply(strsplit(res, "[^-A-Z0-9]"), function(k) {
+    if (!is.na(k)) {
+      paste(k[k != ""], collapse=" ")
+    } else k
+  })
+}
+
+#' Commit Log
+#'
+#' Processes raw git log by determinig time zone accuracy and linking
+#' commits to issues.
+#'
+#' @param git.input Parquet file containing the raw git log.
+#' @param issues.input Parquet file containing the raw issue log.
+#' @param output Parquet file where to store the result.
+#' @return The output filename (if any) or the data.table object
+#'   otherwise.
 #' @export
-GitLog <- function(git.in, bugzilla.in, idmerging.in, git.out) {
-  log <- readRDS(git.in)
-  mozbugs <- readRDS(bugzilla.in)
-  setkey(mozbugs, bug.id)
-
-  log <- FixGitLog(log)
-  log <- FindBots(log)
-  log <- log[!log$bot]
-
-  log[, bug.id := ParseBugId(message)]
-  log[source == "VCS Mozilla", origin := project]
-  log[grepl("^VCS Mozilla", source),
-      project := mozbugs[list(ParseBugId(message)), product]]
-
-  log <- log[, if (.N > 2000) .SD, by="project"]
-
-  log$date <- NULL
-  ignore <- "tomcat\\d+"
-  log <- log[!grepl(ignore, project)]
-  setkey(log, project, source, hash)
-
-  log[, local.time := LocalTime(time, tz)]
-  log[, date := as.Date(local.time)]
-  log[, week := AutoTimeUtils::ISOWeek(local.time)]
-  log[, weekday := format(local.time, "%u")]
-  log[, hour := format(local.time, "%H")]
-  log[, weekend := weekday > "5"]
-  log[, year := year(date)]
-  log[, month := as.Date(format(date, "%Y-%m-01"))]
-
-  idmerging <- as.data.table(read.csv(idmerging.in, stringsAsFactors=FALSE))
-  idmerging <- idmerging[author.key %in% log$author,
-                         list(author=unique(author.key),
-                              author.name=names(which.max(table(author.email)))[1],
-                              author.email=names(which.max(table(author.name))))[1],
-                         by=c("source", "merged.id")]
-
-  log <- merge(idmerging, log, by=c("source", "author"))
-
-  saveRDS(log, git.out)
-  invisible(NULL)
-}
-
-#' Bugzilla log
-#'
-#' Makes bugzilla log.
-#'
-#' @param idmerging Identity merging.
-#' @param comments.in Bugzilla comments RDS input.
-#' @return Bugzilla log.
-BugzillaLog <- function(idmerging, comments.in) {
-  bugzilla <- readRDS(comments.in)
-  bugzilla <- merge(idmerging[, list(source, merged.id, author.key, author)],
-                    bugzilla, by.x=c("source", "author.key"),
-                    by.y=c("source", "author.email"))
-  bugzilla$author.key <- NULL
-  bugzilla[, created := as.POSIXct(created, tz="Z")]
-  bugzilla[, updated := as.POSIXct(created, tz="Z")]
-  bugzilla
-}
-
-#' Jira log
-#'
-#' Makes Jira log.
-#'
-#' @param idmerging Identity merging.
-#' @param comments.in Jira comments RDS input.
-#' @return Jira log.
-JiraLog <- function(idmerging, comments.in) {
-  jira <- readRDS(comments.in)
-  jira <- merge(jira, idmerging[, list(source, merged.id, author.key, author)],
-                by.x=c("source", "author.key", "author.dname"),
-                by.y=c("source", "author.key", "author"))
-  setnames(jira, "author.dname", "author")
-  jira$author.key <- NULL
-  jira$author.name <- NULL
-  jira$author.email <- NULL
-  jira <- unique(jira)
-  jira[, created := as.POSIXct(created, tz="Z")]
-  jira[, updated := as.POSIXct(created, tz="Z")]
-  jira[, bug.id := as.integer(bug.id)]
-  jira
-}
-
-#' Bug log.
-#'
-#' Makes Jira and Bugzilla bug log.
-#'
-#' @param idmerging.in Input RDS file of identity merging
-#' @param bugzilla.comments.in Input RDS file of Bugzilla comments.
-#' @param bugzilla.bugs.in Input RDS file of Bugzilla bugs.
-#' @param jira.comments.in Input RDS file of Jira comments.
-#' @param jira.bugs.in Input RDS file of Jira bugs.
-#' @param buglog.out Bugzilla bugs output RDS file.
-#' @export
-BugLog <- function(idmerging.in, bugzilla.comments.in, bugzilla.bugs.in,
-                   jira.comments.in, jira.bugs.in, buglog.out) {
-  idmerging <- read.csv(idmerging.in, stringsAsFactors=FALSE)
-  idmerging <- as.data.table(idmerging)
-  bugzilla <- BugzillaLog(idmerging, bugzilla.comments.in)
-  jira <- JiraLog(idmerging, jira.comments.in)
-  bugzilla.bugs <- readRDS(bugzilla.bugs.in)
-  jira.bugs <- readRDS(jira.bugs.in)
-
-  bugs <- rbind(bugzilla.bugs[, list(source, bug.id, product, component, status,
-                                     resolution, severity)],
-                jira.bugs[, list(source, bug.id, product, component, status,
-                                 resolution, severity)])
-  buglog <- merge(rbind(jira, bugzilla, fill=TRUE), bugs,
-                  by=c("source", "bug.id"))
-  saveRDS(buglog, buglog.out)
-  invisible(NULL)
+CommitLog <- function(git.input, issues.input, output=NULL) {
+  log <- ReadParquet(git.input)
+  log <- CommitTimeZoneAccuracy(log)
+  log[source == "mozilla", issue.id := ParseMozillaIssueId(message)]
+  log[source == "apache", issue.key := ParseApacheIssueKey(message)]
+  log <- log[, if (!is.na(issue.key)) {
+                 cbind(.SD[, -grep("issue.key", names(.SD)), with=FALSE],
+                       issue.key=strsplit(issue.key, " ")[[1]])
+               } else .SD,
+             by=list(source, repo, hash)]
+  sub <- with(log, is.na(issue.id) & !is.na(issue.key))
+  keys <- log[sub, list(source, issue.key)]
+  issues <- ReadParquet(issues.input)
+  log[sub]$issue.id <- issues[keys, issue.id, on=list(source, issue.key)]
+  log$issue.key <- NULL
+  if (!is.null(output)) {
+    WriteParquet(log, output)
+    output
+  } else log
 }
 
 #' Time zone history
@@ -188,95 +103,168 @@ TimeZoneHistory <- function(tz, times) {
   list(time=times[changes], tz=tz[changes])
 }
 
-#' Git timezone history
+#' Commit Time Zone History
 #'
-#' Computes timezone history from git log.
+#' Computes timezone history in commits for developer profiles based
+#' on identity merging.
 #'
-#' @param git.in Input gitlog file.
-#' @param tz.out Output RDS file.
+#' @param log.input Parquet file containing the commit log.
+#' @param idmerging.input Parquet file with identity merging.
+#' @param output Parquet file where to store the output.
+#' @return The output filename (if any) or the data.table object
+#'   otherwise.
 #' @export
-GitTimeZoneHistory <- function(git.in, tz.out) {
-  gitlog <- readRDS(git.in)
-  gitlog$message <- NULL
-  gitlog <- gitlog[, list(size=pmax(sum(added), sum(removed))),
-                   by=c("source", "project", "hash", "merged.id", "tz", "time")]
-  gitlog[, source := sub("VCS ", "", source)]
-
-  tz.history <- gitlog[order(time),
-                       if (.N >= 100) TimeZoneHistory(tz, time),
-                       by=c("source", "merged.id")]
-  saveRDS(tz.history, tz.out)
-  invisible(NULL)
+CommitTimeZoneHistory <- function(log.input, idmerging.input, output) {
+  log <- ReadParquet(log.input)[(accurate.tz)]
+  idmerging <- ReadParquet(idmerging.input)
+  idmerging <- unique(idmerging[type == "commits",
+                                list(source, repo, key, merged.id)])
+  tz.history <- rbind(log[, list(source, repo, key=author,
+                                 tz=author.tz, time=author.time)],
+                      log[, list(source, repo, key=committer,
+                                 tz=commit.tz, time=commit.time)])
+  tz.history <- merge(idmerging, unique(tz.history),
+                      by=c("source", "repo", "key"))
+  tz.history <- tz.history[order(source, merged.id, time)]
+  tz.history <- tz.history[, TimeZoneHistory(tz, time),
+                           by=c("source", "merged.id")]
+  if (!is.null(output)) {
+    WriteParquet(tz.history, output)
+    output
+  } else tz.history
 }
 
-#' Filtered bug log
+#' Commit Timestamps
 #'
-#' Filters bug log to only keep people with timezone from git log..
+#' Returns list of timestamps for commits.
 #'
-#' @param buglog.in Buglog RDS input file.
-#' @param tz.in Time zone history RDS input file.
-#' @param buglog.out Output file.
-#' @export
-FilteredBugLog <- function(buglog.in, tz.in, buglog.out) {
-  buglog <- readRDS(buglog.in)
-  buglog[, bug.id := as.character(bug.id)]
-  buglog[, comment.id := as.integer(comment.id)]
-  tz.history <- readRDS(tz.in)
-
-  buglog <- merge(buglog, unique(tz.history[, list(source, merged.id)]),
-                  by=c("source", "merged.id"))
-
-  setkey(tz.history, source, merged.id, time)
-  setkey(buglog, source, merged.id, created)
-  setnames(buglog, "tz", "tz.orig")
-
-  buglog <- tz.history[buglog, roll=TRUE, rollends=TRUE]
-
-  saveRDS(buglog, buglog.out)
-  invisible(NULL)
+#' @param commits.input parquet file containing the commit log.
+#' @param idmerging Identity merging data.table.
+#' @return The commit timestamp log.
+CommitTimestamps <- function(commits.input, idmerging) {
+  idmerging <- unique(idmerging[!is.na(repo),
+                                list(source, repo, key, merged.id)])
+  commits <- (ReadParquet(commits.input) %>%
+              setnames("author", "author.key") %>%
+              merge(idmerging,
+                    by.x=c("source", "repo", "author.key"),
+                    by.y=c("source", "repo", "key"), all.x=TRUE) %>%
+              setnames("merged.id", "author") %>%
+              setnames("committer", "committer.key") %>%
+              merge(idmerging,
+                    by.x=c("source", "repo", "committer.key"),
+                    by.y=c("source", "repo", "key"), all.x=TRUE) %>%
+              setnames("merged.id", "committer"))
+  res <- rbind(commits[!is.na(author),
+                       list(source, repo, hash,
+                            time=author.time, tz=author.tz, accurate.tz,
+                            person=author, type="commit", action="authored")],
+               commits[!is.na(committer),
+                       list(source, repo, hash,
+                            time=commit.time, tz=commit.tz, accurate.tz,
+                            person=committer, type="commit", action="committed")])
+  res[(!accurate.tz), tz := NA]
+  res$accurate.tz <- NULL
+  res
 }
 
-#' Combined log
+#' Issue Timestamps
 #'
-#' Makes combined Git, Jira and Bugzilla log.
+#' Returns list of timestamps for issues.
 #'
-#' @param git.in Git log RDS input file.
-#' @param bugs.in Bug log RDS input file.
-#' @param pos.in POS metrics RDS input file.
-#' @param file.out Output RDS file.
-#' @export
-CombinedLog <- function(git.in, bugs.in, pos.in, file.out) {
-  gitlog <- readRDS(git.in)
-  gitlog$message <- NULL
-  gitlog <- gitlog[, list(size=pmax(sum(added), sum(removed))),
-                   by=c("source", "project", "hash", "merged.id",
-                        "author", "bot", "tz", "time")]
-
-  gitlog[, source := sub("VCS ", "", source)]
-  setnames(gitlog, "hash", "id")
-  gitlog[, type := "VCS commit"]
-
-  buglog <- readRDS(bugs.in)
-
-  metrics <- readRDS(pos.in)[, list(size=sum(nchar)),
-                             by=list(source, bug.id, comment.id)]
-  buglog[, bug.id := as.integer(bug.id)]
-  buglog[, comment.id := as.integer(comment.id)]
-  setkey(metrics, source, bug.id, comment.id)
-  setkey(buglog, source, bug.id, comment.id)
-  buglog <- metrics[buglog]
-  buglog[is.na(size), size := 0]
-
-  buglog[, id := paste(bug.id, comment.id)]
-  buglog$bug.id <- NULL
-  buglog$comment.id <- NULL
-  buglog$updated <- NULL
-  buglog[, type := "Bug comment"]
-  setnames(buglog, "product", "project")
-
-  log <- rbind(gitlog, buglog, fill=TRUE)
-  log <- AutoTimeUtils::CreateTimeVariables(log)
-
-  saveRDS(log, file.out)
-  invisible(NULL)
+#' @param issues.input parquet file containing the issue log.
+#' @param idmerging Identity merging data.table.
+#' @return The issue timestamp log.
+IssueTimestamps <- function(issues.input, idmerging) {
+  idmerging <- unique(idmerging[is.na(repo), list(source, key, merged.id)])
+  issues <- (ReadParquet(issues.input) %>%
+             merge(idmerging,
+                   by.x=c("source", "reporter.key"),
+                   by.y=c("source", "key"), all.x=TRUE) %>%
+             setnames("merged.id", "reporter") %>%
+             merge(idmerging,
+                   by.x=c("source", "creator.key"),
+                   by.y=c("source", "key"), all.x=TRUE) %>%
+             setnames("merged.id", "creator"))
+  rbind(issues[!is.na(creator),
+               list(source, product, issue.id,
+                    time=created, person=creator,
+                    type="issue", action="created")],
+        issues[!is.na(reporter),
+               list(source, product, issue.id,
+                    time=created, person=reporter,
+                    type="issue", action="reported")],
+        issues[!is.na(creator) & created < updated,
+               list(source, product, issue.id,
+                    time=updated, person=creator,
+                    type="issue", action="updated")])
 }
+
+#' Comment Timestamps
+#'
+#' Returns list of timestamps for issue comments.
+#'
+#' @param comments.input parquet file containing the issue comment log.
+#' @param idmerging Identity merging data.table.
+#' @return The issue comment timestamp log.
+CommentTimestamps <- function(comments.input, idmerging) {
+  idmerging <- unique(idmerging[is.na(repo), list(source, key, merged.id)])
+  comments <- (ReadParquet(comments.input) %>%
+               merge(idmerging,
+                     by.x=c("source", "author.key"),
+                     by.y=c("source", "key"), all.x=TRUE) %>%
+               setnames("merged.id", "author") %>%
+               merge(idmerging,
+                     by.x=c("source", "update.author.key"),
+                     by.y=c("source", "key"), all.x=TRUE) %>%
+               setnames("merged.id", "update.author"))
+  rbind(comments[!is.na(author),
+                 list(source, product, issue.id, comment.id,
+                      time=created, person=author,
+                      type="comment", action="created")],
+        comments[!is.na(author) & is.na(update.author) &
+                 created < updated,
+                 list(source, product, issue.id, comment.id,
+                      time=updated, person=author,
+                      type="comment", action="updated")],
+        comments[!is.na(update.author) & created < updated,
+                 list(source, product, issue.id, comment.id,
+                      time=updated, person=update.author,
+                      type="comment", action="updated")])
+}
+
+#' Timestamps
+#'
+#' Returns list of timestamps for commits, issues and issue comments.
+#'
+#' @param commits.input parquet file containing the commit log.
+#' @param issues.input parquet file containing the issue log.
+#' @param comments.input parquet file containing the issue comment
+#'   log.
+#' @param idmerging.input Parquet file containing identity merging.
+#' @param tzhistory.input Parquet file containing the commit timezone
+#'   history.
+#' @param output Parquet file where to store the output.
+#' @return The output filename (if any) or the data.table object
+#'   containing the timestamp log otherwise.
+#' @export
+Timestamps <- function(commits.input, issues.input, comments.input,
+                       idmerging.input, tzhistory.input, output=NULL) {
+  idmerging <- ReadParquet(idmerging.input)
+  issues.ts <- rbind(IssueTimestamps(issues.input, idmerging),
+                     CommentTimestamps(comments.input, idmerging),
+                     fill=TRUE)
+  tzhistory <- ReadParquet(tzhistory.input)
+  setnames(tzhistory, "merged.id", "person")
+  res <- rbind(CommitTimestamps(commits.input, idmerging),
+               tzhistory[issues.ts, roll=TRUE, rollends=TRUE,
+                         on=c("source", "person", "time")], fill=TRUE)
+  if (!is.null(output)) {
+    WriteParquet(res, output)
+    output
+  } else res
+}
+
+## ## TODO
+## ## Apache: "cvs2svn", "svn-role"
+## ## Need to grep because different ones: jenkins
