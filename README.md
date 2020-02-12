@@ -22,9 +22,28 @@ structure:
   one product tag. For example raw/bugzilla/mozilla/Firefox contains
   all JSON files containing issues for Firefox.
 
-## Drake plans
+
+## Installation
+
+With devtools:
+
+    devtools::install_github("M3SOulu/NLoN")
+
+## Drake plan
 
 The package relies on [drake](https://github.com/ropensci/drake) for
 managing the workflow of the whole pipeline. It can be used to
 automatically figure out which data files are up to date and which
 needs to (re)generated in case of failure during execution.
+
+The plan can be generated and executed using:
+
+    library(MozillaApacheDataset)
+
+    logging::basicConfig()
+    pkgconfig::set_config("drake::strings_in_dots"="literals")
+
+    datadir <- "."
+
+    plan <- FullPlan(datadir)
+    drake::make(plan)
