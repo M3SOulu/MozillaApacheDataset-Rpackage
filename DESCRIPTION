@@ -15,4 +15,5 @@ LazyData: true
 RoxygenNote: 7.0.2
 Remotes: M3SOulu/EmoticonFindeR,
          M3SOulu/RSentiStrength,
-         M3SOulu/RSenti4SD
+         M3SOulu/RSenti4SD,
+         M3SOulu/NLoN
