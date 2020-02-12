@@ -22,12 +22,11 @@ structure:
   one product tag. For example raw/bugzilla/mozilla/Firefox contains
   all JSON files containing issues for Firefox.
 
-
 ## Installation
 
 With devtools:
 
-    devtools::install_github("M3SOulu/NLoN")
+    devtools::install_github("M3SOulu/MozillaApacheDataset-Rpackage")
 
 ## Drake plan
 
