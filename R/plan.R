@@ -198,7 +198,7 @@ NLPPlanFunctions <- function(senti4sd.chunk.limit=1000,
   }), senti4sd=substitute(function(fin, fout) {
     ProcessComments(MozillaApacheDataset::Senti4SD, fin, fout,
                     senti4sd.model, memory.limit, chunk.limit)
-  }, list(path=senti4sd.path, memory.limit=senti4sd.memory.limit,
+  }, list(memory.limit=senti4sd.memory.limit,
           chunk.limit=senti4sd.chunk.limit)))
 }
 
