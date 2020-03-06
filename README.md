@@ -11,8 +11,8 @@ Apache code repositories and issue trackers.
 In order for it to work, raw data should be stored with the following
 structure:
 * Git: each Git repository raw data is either stored as a single JSON
-  file raw/git/<source>/<repo>.json or as multiple JSON files in a
-  folder raw/git/<source>/<repo>
+  file raw/git/\<source\>/\<repo\>.json or as multiple JSON files in a
+  folder raw/git/\<source\>/\<repo\>
 * Jira: Apache's issue tracker raw data is stored inside
   raw/jira/apache. Individual folders contain issues specific to one
   product tag. For example raw/jira/apache/HADOOP contains all JSON
