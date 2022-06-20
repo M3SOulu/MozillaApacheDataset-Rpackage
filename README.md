@@ -1,4 +1,6 @@
-[![Build Status](https://travis-ci.org/M3SOulu/MozillaApacheDataset-Rpackage.svg?branch=master)](https://travis-ci.org/M3SOulu/MozillaApacheDataset-Rpackage)
+<!-- badges: start -->
+[![R-CMD-check](https://github.com/M3SOulu/MozillaApacheDataset-Rpackage/workflows/R-CMD-check/badge.svg)](https://github.com/M3SOulu/MozillaApacheDataset-Rpackage/actions)
+<!-- badges: end -->
 
 # 20-MAD - MozillaApacheDataset (R Package)
 
